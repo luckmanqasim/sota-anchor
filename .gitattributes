@@ -1,0 +1,4 @@
+hooks/session-start text eol=lf
+hooks/user-prompt-submit text eol=lf
+hooks/run-hook.cmd text eol=lf
+*.py text eol=lf

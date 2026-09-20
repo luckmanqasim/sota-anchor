@@ -27,6 +27,7 @@ from .catalog import (
     CatalogUnavailable,
     fetch_catalog,
 )
+from .protocol import build_verification_payload
 from .retriever import DEFAULT_WINDOW_MONTHS, gather_evidence
 
 SERVER_NAME = "sota-anchor"
@@ -38,7 +39,10 @@ VERIFY_DESCRIPTION = (
     "confirmation that the limitation still holds, or an assertion-reason paradigm "
     "update telling you what not to build and what replaces it. Call this before "
     "committing to a workaround, a heuristic pipeline or a custom post-processing "
-    "stage in any domain."
+    "stage in any domain. Call it with just the pitch first: it returns an "
+    "inversion prompt asking what would have to be impossible for the design to "
+    "be justified. Answer that, then call again with verification_query set, and "
+    "it returns dated evidence plus the protocol for judging against it."
 )
 
 
@@ -92,11 +96,26 @@ def build_server(
         return json.dumps(catalog_payload(catalog), indent=2)
 
     @mcp.tool(description=VERIFY_DESCRIPTION)
-    async def verify_architecture_tool(pitch: str) -> str:
+    async def verify_architecture_tool(pitch: str, verification_query: str | None = None) -> str:
         try:
             llm = build_llm()
-        except LLMUnavailable as error:
-            return f"sota-anchor cannot verify this proposal: {error}"
+        except LLMUnavailable:
+            # The default path, not a failure. With no provider account the
+            # caller does the reasoning and this tool supplies the evidence and
+            # the protocol, so the absence of a key is never reported as a fault.
+            llm = None
+
+        if llm is None:
+            try:
+                payload = await build_verification_payload(
+                    pitch,
+                    verification_query=verification_query,
+                    gather=gather_evidence,
+                    months=DEFAULT_WINDOW_MONTHS,
+                )
+            except ValueError as error:
+                return f"sota-anchor cannot verify this proposal: {error}"
+            return payload.render()
 
         try:
             report = await verify_architecture(

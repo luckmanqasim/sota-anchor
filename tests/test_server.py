@@ -136,24 +136,89 @@ class TestVerifyArchitectureTool:
         result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
         assert "[SOTA ARBITER PARADIGM UPDATE]" not in text_of(result)
 
-    async def test_a_missing_api_key_is_reported_not_raised(self, monkeypatch, raw_models):
+
+    async def test_an_empty_pitch_is_reported_not_raised(self, wired):
+        server, _ = wired
+        result = await server.call_tool("verify_architecture", {"pitch": "   "})
+        assert text_of(result).strip()
+
+
+class TestTwoPhaseVerifyArchitecture:
+    """The MCP tool with no API key: it returns protocol, not a verdict.
+
+    It stays self-describing on purpose. A caller that never loaded the skill
+    still gets told what to do next, rather than a bare evidence dump.
+    """
+
+    @pytest.fixture
+    def keyless(self, monkeypatch, raw_models):
         from sota_anchor import server as module
-        from sota_anchor.arbiter import LLMUnavailable
 
         async def fake_fetch(**kwargs):
             return build_catalog(raw_models, now=NOW)
 
+        state: dict[str, object] = {"evidence": evidence_set("PlanSightRAG")}
+
+        async def fake_gather(query, **kwargs):
+            state["queried"] = query
+            return state["evidence"]
+
+        def no_key():
+            from sota_anchor.arbiter import LLMUnavailable
+
+            raise LLMUnavailable("no API key found")
+
         monkeypatch.setattr(module, "fetch_catalog", fake_fetch)
+        monkeypatch.setattr(module, "gather_evidence", fake_gather)
+        monkeypatch.setattr(module, "build_llm", no_key)
+        return module.build_server(), state
 
-        def explode():
-            raise LLMUnavailable("no API key found: set SOTA_ANCHOR_API_KEY")
+    async def test_tool_accepts_an_optional_verification_query(self, keyless):
+        server, _ = keyless
+        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        properties = (tool.input_schema or {}).get("properties", {})
+        assert "verification_query" in properties
+        assert "verification_query" not in (tool.input_schema or {}).get("required", [])
 
-        monkeypatch.setattr(module, "build_llm", explode)
-        server = module.build_server()
-        result = await server.call_tool("verify_architecture", {"pitch": "anything"})
-        assert "SOTA_ANCHOR_API_KEY" in text_of(result)
+    async def test_without_a_query_it_returns_the_inversion_prompt(self, keyless):
+        server, _ = keyless
+        result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        assert "ASSUMPTION INVERSION" in text_of(result)
 
-    async def test_an_empty_pitch_is_reported_not_raised(self, wired):
-        server, _ = wired
+    async def test_without_a_query_it_does_not_retrieve(self, keyless):
+        server, state = keyless
+        await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        assert "queried" not in state
+
+    async def test_with_a_query_it_returns_the_judging_protocol(self, keyless):
+        server, state = keyless
+        result = await server.call_tool(
+            "verify_architecture",
+            {"pitch": "OCR snapping pipeline", "verification_query": "vector polygon extraction"},
+        )
+        body = text_of(result)
+        assert "PARADIGM SHIFT" in body
+        assert "PlanSightRAG" in body
+        assert state["queried"] == "vector polygon extraction"
+
+    async def test_with_a_query_but_no_evidence_it_refuses_to_invite_a_verdict(self, keyless):
+        server, state = keyless
+        state["evidence"] = EvidenceSet()
+        result = await server.call_tool(
+            "verify_architecture",
+            {"pitch": "OCR snapping pipeline", "verification_query": "some query"},
+        )
+        body = text_of(result)
+        assert "NO VERDICT POSSIBLE" in body
+        assert "PARADIGM SHIFT" not in body
+
+    async def test_no_api_key_is_never_mentioned_as_an_obstacle(self, keyless):
+        # Needing no key is the point; the tool must not report its absence as a fault.
+        server, _ = keyless
+        result = await server.call_tool("verify_architecture", {"pitch": "a pitch"})
+        assert "API key" not in text_of(result)
+
+    async def test_an_empty_pitch_is_reported_not_raised(self, keyless):
+        server, _ = keyless
         result = await server.call_tool("verify_architecture", {"pitch": "   "})
         assert text_of(result).strip()

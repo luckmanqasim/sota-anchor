@@ -185,17 +185,8 @@ class TestCheck:
         result = runner.invoke(main, ["check", "a pitch"])
         assert result.exit_code == 0
 
-    def test_missing_api_key_exits_one_with_guidance(self, runner, monkeypatch, wired, project):
-        from sota_anchor import cli as module
-        from sota_anchor.arbiter import LLMUnavailable
-
-        def explode():
-            raise LLMUnavailable("no API key found: set SOTA_ANCHOR_API_KEY")
-
-        monkeypatch.setattr(module, "build_llm", explode)
-        result = runner.invoke(module.main, ["check", "a pitch"])
-        assert result.exit_code == 1
-        assert "SOTA_ANCHOR_API_KEY" in result.output
+    # A missing key no longer fails: it falls back to the host-driven protocol.
+    # See TestKeylessCheck.
 
     def test_empty_proposal_exits_one(self, runner, wired, project):
         from sota_anchor.cli import main
@@ -234,3 +225,162 @@ class TestTopLevel:
         output = runner.invoke(main, ["--help"]).output
         for command in ("sync", "check", "serve"):
             assert command in output
+
+
+class TestKeylessCheck:
+    """With no API key the CLI stops being useless and starts being a protocol.
+
+    It previously exited 1 with `no API key found`. Now it emits the payload a
+    host agent answers, and exits 3 -- distinct from 0 (limitation holds) and 2
+    (obsolete), so a CI gate cannot read "nobody judged this" as "this is fine".
+    """
+
+    @pytest.fixture
+    def keyless(self, monkeypatch, wired):
+        from sota_anchor import cli as module
+        from sota_anchor.arbiter import LLMUnavailable
+
+        def explode():
+            raise LLMUnavailable("no API key found: set SOTA_ANCHOR_API_KEY")
+
+        monkeypatch.setattr(module, "build_llm", explode)
+        return wired
+
+    def test_emits_the_inversion_prompt_without_a_query(self, runner, keyless, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["check", "Build an OCR snapping pipeline."])
+        assert "ASSUMPTION INVERSION" in result.output
+
+    def test_exits_three_to_mean_indeterminate(self, runner, keyless, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["check", "Build an OCR snapping pipeline."])
+        assert result.exit_code == 3
+
+    def test_does_not_retrieve_before_the_query_exists(self, runner, keyless, project):
+        from sota_anchor.cli import main
+
+        runner.invoke(main, ["check", "Build an OCR snapping pipeline."])
+        assert "queried" not in keyless
+
+    def test_with_a_query_it_returns_the_judging_protocol(self, runner, keyless, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(
+            main, ["check", "a pitch", "--query", "direct vector polygon extraction"]
+        )
+        assert "PARADIGM SHIFT" in result.output
+        assert keyless["queried"] == "direct vector polygon extraction"
+
+    def test_empty_evidence_refuses_rather_than_inviting_a_verdict(self, runner, keyless, project):
+        from sota_anchor.cli import main
+        from sota_anchor.retriever import EvidenceSet
+
+        keyless["evidence"] = EvidenceSet()
+        result = runner.invoke(main, ["check", "a pitch", "--query", "some query"])
+        assert "NO VERDICT POSSIBLE" in result.output
+        assert "PARADIGM SHIFT" not in result.output
+
+    def test_still_mentions_how_to_get_a_headless_verdict(self, runner, keyless, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["check", "a pitch"])
+        assert "SOTA_ANCHOR_API_KEY" in result.output
+
+
+class TestEvidenceCommand:
+    """What the skill shells out to. Deterministic retrieval, no LLM anywhere."""
+
+    def test_prints_retrieved_evidence(self, runner, wired, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["evidence", "--query", "vector polygon extraction"])
+        assert result.exit_code == 0, result.output
+        assert "PlanSightRAG" in result.output
+
+    def test_passes_the_query_through_verbatim(self, runner, wired, project):
+        from sota_anchor.cli import main
+
+        runner.invoke(main, ["evidence", "--query", "ribosome profiling alignment"])
+        assert wired["queried"] == "ribosome profiling alignment"
+
+    def test_json_output_is_machine_readable(self, runner, wired, project):
+        import json
+
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["evidence", "--query", "x", "--json"])
+        assert json.loads(result.output)["items"]
+
+    def test_months_narrows_the_window(self, runner, wired, project):
+        from sota_anchor.cli import main
+
+        runner.invoke(main, ["evidence", "--query", "x", "--months", "6"])
+        assert wired["gather_kwargs"]["months"] == 6
+
+    def test_needs_no_api_key(self, runner, monkeypatch, wired, project):
+        from sota_anchor import cli as module
+        from sota_anchor.arbiter import LLMUnavailable
+
+        def explode():
+            raise LLMUnavailable("no API key")
+
+        monkeypatch.setattr(module, "build_llm", explode)
+        result = runner.invoke(module.main, ["evidence", "--query", "x"])
+        assert result.exit_code == 0, result.output
+
+    def test_reports_an_empty_result_without_pretending_otherwise(self, runner, wired, project):
+        from sota_anchor.cli import main
+        from sota_anchor.retriever import EvidenceSet
+
+        wired["evidence"] = EvidenceSet()
+        result = runner.invoke(main, ["evidence", "--query", "x"])
+        assert result.exit_code == 0
+        assert "no evidence" in result.output.lower()
+
+    def test_surfaces_retrieval_errors(self, runner, wired, project):
+        from sota_anchor.cli import main
+        from sota_anchor.retriever import EvidenceSet
+
+        wired["evidence"] = EvidenceSet(errors=["arxiv: throttled (HTTP 406)"])
+        result = runner.invoke(main, ["evidence", "--query", "x"])
+        assert "throttled" in result.output
+
+
+class TestSeedCommand:
+    def test_prints_the_block(self, runner, wired, project):
+        from sota_anchor.cli import main
+
+        result = runner.invoke(main, ["seed"])
+        assert result.exit_code == 0, result.output
+        assert "SOTA ANCHOR" in result.output
+
+    def test_refresh_writes_the_cached_block(self, runner, wired, project, tmp_path, monkeypatch):
+        from sota_anchor import cli as module
+        from sota_anchor.seed import SEED_FILENAME
+
+        target = tmp_path / SEED_FILENAME
+        monkeypatch.setattr(module, "seed_path", lambda: target)
+        result = runner.invoke(module.main, ["seed", "--refresh"])
+        assert result.exit_code == 0, result.output
+        assert "anthropic/claude-opus-5" in target.read_text(encoding="utf-8")
+
+    def test_needs_no_api_key(self, runner, monkeypatch, wired, project):
+        from sota_anchor import cli as module
+        from sota_anchor.arbiter import LLMUnavailable
+
+        def explode():
+            raise LLMUnavailable("no API key")
+
+        monkeypatch.setattr(module, "build_llm", explode)
+        assert runner.invoke(module.main, ["seed"]).exit_code == 0
+
+    def test_sync_also_refreshes_the_session_block(self, runner, wired, project, tmp_path, monkeypatch):
+        from sota_anchor import cli as module
+        from sota_anchor.seed import SEED_FILENAME
+
+        target = tmp_path / SEED_FILENAME
+        monkeypatch.setattr(module, "seed_path", lambda: target)
+        runner.invoke(module.main, ["sync"])
+        assert target.exists()

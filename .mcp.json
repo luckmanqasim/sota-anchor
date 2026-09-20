@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sota-anchor": {
+      "command": "sota-anchor",
+      "args": ["serve"]
+    }
+  }
+}

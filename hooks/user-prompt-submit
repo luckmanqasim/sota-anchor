@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# UserPromptSubmit hook: nudge toward verification when a prompt asserts a limit.
+#
+# Inert unless SOTA_ANCHOR_PROMPT_HOOK=1. This runs on every message the user
+# sends, so the default install pays nothing for it beyond one env-var test.
+#
+# It only ever adds context. It never emits a block decision and never exits
+# non-zero, because a non-zero exit on this event erases what the user typed --
+# far too destructive for a heuristic nudge.
+set -uo pipefail
+
+[ "${SOTA_ANCHOR_PROMPT_HOOK:-0}" = "1" ] || exit 0
+
+payload="$(cat 2>/dev/null)" || exit 0
+lowered="$(printf '%s' "$payload" | tr '[:upper:]' '[:lower:]')"
+
+NUDGE="[SOTA ANCHOR] This request asserts that something cannot be done, or proposes routing around it. Your training data has a cutoff, so that limitation may already have been removed. Before building the workaround, use the sota-architect skill or run /sota-check on the design. If the limitation is real, carry on -- this is a prompt to check, not an objection."
+
+# Epistemic-stance terms: they describe the SHAPE of a claimed limitation, not
+# any subject matter. Nothing here knows what CAD or genomics are, so the
+# no-topic-dictionary rule the engine follows still holds.
+for phrase in \
+    "cannot" "can't" "unable to" "impossible" "not possible" "unsupported" \
+    "doesn't support" "does not support" "no native" "workaround" "work around" \
+    "fall back" "fallback" "limitation" "manually parse" "by hand"
+do
+    case "$lowered" in
+        *"$phrase"*)
+            printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "UserPromptSubmit",\n    "additionalContext": "%s"\n  }\n}\n' "$NUDGE"
+            exit 0
+            ;;
+    esac
+done
+
+exit 0

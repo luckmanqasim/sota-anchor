@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# SessionStart hook: inject the active model landscape into this session.
+#
+# Budget is sub-second, so this reads a block that `sota-anchor sync` (or
+# `seed --refresh`) rendered earlier. No interpreter, no JSON parsing and no
+# network on the happy path: measured, ~160ms here against ~650ms for a warm
+# Python start and ~1090ms for a cold fetch.
+#
+# Deliberately not `set -e`. A seeding hook must never be the reason a session
+# fails to start, so every failure path ends in `exit 0`.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CACHE_DIR="${SOTA_ANCHOR_CACHE_DIR:-${HOME}/.cache/sota-anchor}"
+BLOCK="${CACHE_DIR}/session-block.md"
+TTL_MINUTES="${SOTA_ANCHOR_TTL_MINUTES:-1440}"
+
+# Refresh out of band. The user never waits for the network: this session uses
+# whatever is cached, and the next one is current.
+refresh_detached() {
+    local -a runner
+    if command -v sota-anchor >/dev/null 2>&1; then
+        runner=(sota-anchor seed --refresh)
+    elif command -v uv >/dev/null 2>&1; then
+        runner=(uv run --quiet sota-anchor seed --refresh)
+    elif command -v python >/dev/null 2>&1; then
+        runner=(python -m sota_anchor.cli seed --refresh)
+    elif command -v python3 >/dev/null 2>&1; then
+        # Last, not first: python3 does not exist on a stock Windows install,
+        # and one shipped plugin hardcodes it.
+        runner=(python3 -m sota_anchor.cli seed --refresh)
+    else
+        return 0
+    fi
+    ( "${runner[@]}" >/dev/null 2>&1 & ) >/dev/null 2>&1 || true
+}
+
+is_fresh() {
+    [ -f "$BLOCK" ] || return 1
+    [ -n "$(find "$CACHE_DIR" -maxdepth 1 -name 'session-block.md' -mmin "-${TTL_MINUTES}" 2>/dev/null)" ]
+}
+
+# JSON string escaping in pure bash. Each substitution is one C-level pass, so
+# this stays far cheaper than starting an interpreter. Backslashes must be
+# escaped first, or the escapes added afterwards get double-escaped.
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+body=""
+if [ -f "$BLOCK" ]; then
+    body="$(cat "$BLOCK" 2>/dev/null)" || body=""
+    is_fresh || refresh_detached
+fi
+
+if [ -z "$body" ]; then
+    # Nothing cached: say what is unknown rather than guessing an identifier.
+    body="$(cat "${SCRIPT_DIR}/bootstrap-block.md" 2>/dev/null)" || body=""
+    refresh_detached
+fi
+
+[ -n "$body" ] || exit 0
+
+escaped="$(escape_for_json "$body")"
+
+# Claude Code reads hookSpecificOutput.additionalContext, and also a top-level
+# additional_context, without deduplicating between them -- so emit exactly one.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
+    printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$escaped"
+else
+    printf '{\n  "additionalContext": "%s"\n}\n' "$escaped"
+fi
+
+exit 0

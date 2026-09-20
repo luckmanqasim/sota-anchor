@@ -23,11 +23,17 @@ from .catalog import (
     fetch_catalog,
 )
 from .injector import sync_targets
+from .protocol import build_verification_payload
 from .retriever import DEFAULT_WINDOW_MONTHS, gather_evidence
+from .seed import render_seed, seed_path, write_seed
 from .server import build_server
 
 #: `check` exits 2 on an obsolete proposal so it can gate CI without parsing output.
 EXIT_OBSOLETE = 2
+
+#: And 3 when no verdict was reached, because a host model still has to judge.
+#: Collapsing this into 0 would let a gate read "nobody judged this" as "fine".
+EXIT_INDETERMINATE = 3
 
 
 def build_llm() -> LLMClient:
@@ -113,6 +119,10 @@ def sync(
 
     featured = catalog.featured(chosen, max_per_provider)
     click.echo(f"Catalog retrieved {catalog.fetched_at.date().isoformat()}: {len(featured)} active endpoints.")
+
+    # Refresh what the SessionStart hook injects, so a sync updates both the
+    # files a human reads and the block every future session starts with.
+    write_seed(render_seed(catalog, chosen, max_per_provider), path=seed_path())
     for result in sync_targets(target, block):
         state = "created" if result.created else ("updated" if result.changed else "unchanged")
         click.echo(f"  {state}: {result.path}")
@@ -121,6 +131,12 @@ def sync(
 @main.command()
 @click.argument("proposal")
 @click.option(
+    "--query",
+    default=None,
+    help="Verification query from the inversion step. Supplying it moves the "
+    "keyless protocol to its second phase: retrieve, then judge.",
+)
+@click.option(
     "--months",
     type=click.IntRange(min=1),
     default=DEFAULT_WINDOW_MONTHS,
@@ -128,15 +144,33 @@ def sync(
     help="Recency window for evidence retrieval.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the full report as JSON.")
-def check(proposal: str, months: int, as_json: bool) -> None:
+def check(proposal: str, query: str | None, months: int, as_json: bool) -> None:
     """Test whether PROPOSAL relies on an obsolete limitation.
 
-    Exits 0 when the limitation still holds, 2 when the proposal is obsolete.
+    With an API key configured this runs the whole pipeline and exits 0 when the
+    limitation still holds or 2 when the proposal is obsolete. Without one it
+    prints the protocol for a host agent to answer and exits 3.
     """
     try:
         llm = build_llm()
     except LLMUnavailable as error:
-        raise click.ClickException(str(error)) from error
+        # Not a failure any more. The plugin's whole point is that the host
+        # agent can do this reasoning, so hand it the protocol instead.
+        try:
+            payload = asyncio.run(
+                build_verification_payload(
+                    proposal, verification_query=query, gather=gather_evidence, months=months
+                )
+            )
+        except ValueError as bad_input:
+            raise click.ClickException(str(bad_input)) from bad_input
+        click.echo(payload.render())
+        click.echo(
+            f"(no verdict rendered here: {error}. Set a key for a headless verdict, "
+            "or let your agent answer the protocol above.)",
+            err=True,
+        )
+        raise SystemExit(EXIT_INDETERMINATE)
 
     try:
         report = asyncio.run(
@@ -152,6 +186,61 @@ def check(proposal: str, months: int, as_json: bool) -> None:
 
     if report.verdict.is_obsolete:
         raise SystemExit(EXIT_OBSOLETE)
+
+
+@main.command()
+@click.option("--query", required=True, help="Verification query to retrieve evidence for.")
+@click.option(
+    "--months",
+    type=click.IntRange(min=1),
+    default=DEFAULT_WINDOW_MONTHS,
+    show_default=True,
+    help="Recency window.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit the evidence set as JSON.")
+def evidence(query: str, months: int, as_json: bool) -> None:
+    """Retrieve recent evidence for QUERY. Deterministic, and needs no API key.
+
+    This is what the sota-architect skill calls: the plugin does the retrieval,
+    the host agent does the judging.
+    """
+    result = asyncio.run(gather_evidence(query, months=months))
+    if as_json:
+        click.echo(result.model_dump_json(indent=2))
+        return
+
+    click.echo(result.render())
+    for error in result.errors:
+        click.echo(f"warning: {error}", err=True)
+
+
+@main.command()
+@click.option("--refresh", is_flag=True, help="Refetch the catalog and rewrite the cache.")
+@click.option(
+    "--staleness-months",
+    type=click.IntRange(min=1),
+    default=DEFAULT_STALENESS_MONTHS,
+    show_default=True,
+    help="Legacy threshold, as for `sync`.",
+)
+def seed(refresh: bool, staleness_months: int) -> None:
+    """Print the session-start context block, or refresh the cached copy.
+
+    The SessionStart hook reads the cached file rather than calling this, so that
+    injecting context costs a `cat` and not an interpreter start.
+    """
+    try:
+        catalog = asyncio.run(
+            fetch_catalog(staleness_months=staleness_months, force=refresh)
+        )
+    except CatalogUnavailable as error:
+        raise click.ClickException(str(error)) from error
+
+    block = render_seed(catalog)
+    if refresh:
+        target = write_seed(block, path=seed_path())
+        click.echo(f"wrote {target}", err=True)
+    click.echo(block)
 
 
 @main.command()
