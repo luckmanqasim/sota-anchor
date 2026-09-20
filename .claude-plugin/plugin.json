@@ -3,10 +3,10 @@
   "description": "Stops stale model knowledge from reaching your code. Seeds each session with the live frontier model lineup and the superseded identifiers not to reach for, and verifies architectural assumptions against recent research before you build a workaround for a limitation that no longer exists. Needs no LLM API key: this session does the reasoning, the plugin does the retrieval.",
   "version": "0.1.0",
   "author": {
-    "name": "sota-anchor contributors"
+    "name": "Luckman Qasim"
   },
-  "homepage": "https://github.com/sota-anchor/sota-anchor",
-  "repository": "https://github.com/sota-anchor/sota-anchor",
+  "homepage": "https://github.com/luckmanqasim/sota-anchor",
+  "repository": "https://github.com/luckmanqasim/sota-anchor",
   "license": "MIT",
   "keywords": [
     "models",

@@ -60,7 +60,7 @@ STOPWORDS = frozenset(
 
 Source = Literal["arxiv", "github"]
 
-USER_AGENT = "sota-anchor/0.1 (+https://github.com/sota-anchor/sota-anchor)"
+USER_AGENT = "sota-anchor/0.1 (+https://github.com/luckmanqasim/sota-anchor)"
 
 
 def make_client(timeout: float = 30.0) -> httpx.AsyncClient:

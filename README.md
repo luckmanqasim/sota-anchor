@@ -64,7 +64,7 @@ This is the primary way to use it, and it needs **no LLM API key**. The host
 session does the reasoning; the plugin does the retrieval.
 
 ```bash
-git clone https://github.com/sota-anchor/sota-anchor
+git clone https://github.com/luckmanqasim/sota-anchor
 claude --plugin-dir ./sota-anchor          # try it for one session
 claude plugin validate ./sota-anchor       # check the manifests
 ```
