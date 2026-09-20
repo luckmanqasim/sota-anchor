@@ -62,6 +62,9 @@ def raw_models() -> list[dict]:
         or_model("anthropic/claude-opus-4.8", ts(2026, 5, 27)),
         or_model("anthropic/claude-sonnet-5", ts(2026, 6, 30), prompt_price="0.000002"),
         or_model("anthropic/claude-sonnet-4.5", ts(2025, 9, 29)),
+        # Same (claude, opus) lineage as claude-opus-4.8 but a training-era
+        # identifier: the kind a model with an older cutoff actually emits.
+        or_model("anthropic/claude-opus-3", ts(2024, 2, 29)),
         or_model("anthropic/claude-haiku-4.5", ts(2025, 10, 15), prompt_price="0.000001"),
         # --- google: supersession, an image model, and an audio model ---
         or_model("google/gemini-3.8-flash", ts(2026, 9, 2), knowledge_cutoff="2026-03-01",
