@@ -37,7 +37,7 @@ ARXIV_MIN_INTERVAL = 3.0
 MAX_ARXIV_ATTEMPTS = 3
 MAX_GITHUB_ATTEMPTS = 3
 MAX_RETRIES = 2
-RETRY_BACKOFF_SECONDS = 2.0
+RETRY_BACKOFF_SECONDS = 5.0
 RETRY_STATUSES = frozenset({406, 429, 500, 502, 503, 504})
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -75,6 +75,18 @@ def make_client(timeout: float = 30.0) -> httpx.AsyncClient:
         http2=True,
         headers={"User-Agent": USER_AGENT},
     )
+
+
+class Throttled(Exception):
+    """A source asked us to slow down rather than refusing outright."""
+
+    def __init__(self, source: str, status: int):
+        self.source = source
+        self.status = status
+        super().__init__(
+            f"throttled (HTTP {status}); this source limits how often it can be queried, "
+            "so its evidence was skipped for this run"
+        )
 
 
 class Evidence(BaseModel):
@@ -212,14 +224,22 @@ async def _get_with_retry(
     *,
     params: dict[str, object],
     sleep: Sleeper,
+    source: str,
     headers: dict[str, str] | None = None,
 ) -> httpx.Response:
-    """GET with backoff on the statuses that mean "slow down", not "no"."""
+    """GET with backoff on the statuses that mean "slow down", not "no".
+
+    Exhausted retries raise :class:`Throttled` rather than an
+    ``HTTPStatusError``, whose message is a wall of percent-encoded URL that
+    tells a user nothing about what to do.
+    """
     for attempt in range(MAX_RETRIES + 1):
         response = await client.get(url, params=params, headers=headers)
-        if response.status_code in RETRY_STATUSES and attempt < MAX_RETRIES:
-            await sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
-            continue
+        if response.status_code in RETRY_STATUSES:
+            if attempt < MAX_RETRIES:
+                await sleep(RETRY_BACKOFF_SECONDS * (2**attempt))
+                continue
+            raise Throttled(source, response.status_code)
         response.raise_for_status()
         return response
     raise AssertionError("unreachable")  # pragma: no cover
@@ -256,6 +276,7 @@ async def _search_arxiv(
                 "max_results": ARXIV_FETCH_SIZE,
             },
             sleep=sleep,
+            source="arxiv",
         )
         try:
             root = ET.fromstring(response.text)
@@ -318,6 +339,7 @@ async def _search_github(
             },
             headers=headers,
             sleep=sleep,
+            source="github",
         )
 
         found: list[Evidence] = []
@@ -405,7 +427,9 @@ async def gather_evidence(
 
     evidence = EvidenceSet(window_months=months)
     for name, result in zip(("arxiv", "github"), results):
-        if isinstance(result, BaseException):
+        if isinstance(result, Throttled):
+            evidence.errors.append(f"{name}: {result}")
+        elif isinstance(result, BaseException):
             evidence.errors.append(f"{name}: {type(result).__name__}: {result}")
         else:
             evidence.items.extend(result)

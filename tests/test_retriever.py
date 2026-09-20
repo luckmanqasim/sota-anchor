@@ -669,3 +669,58 @@ class TestGithubRelaxation:
             await gather_evidence(QUERY, client=client, now=NOW, months=12)
 
         assert attempts == 1
+
+
+class TestThrottleReporting:
+    def _client(self, handler):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def test_throttling_is_reported_in_plain_language(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+
+        error = next(e for e in evidence.errors if e.startswith("arxiv"))
+        assert "throttled" in error.lower()
+        assert "HTTPStatusError" not in error
+
+    async def test_throttle_message_says_what_was_lost(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(429, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+
+        error = next(e for e in evidence.errors if e.startswith("arxiv"))
+        assert "skipped" in error.lower()
+
+    async def test_a_genuine_error_is_not_mislabelled_as_throttling(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(404, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+
+        error = next(e for e in evidence.errors if e.startswith("arxiv"))
+        assert "throttled" not in error.lower()
+
+    async def test_the_other_source_still_contributes_while_throttled(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(
+                200, json=repos([("acme/live", "polygon extraction", "2026-09-18T09:00:00Z")])
+            )
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+
+        assert evidence.is_empty is False
