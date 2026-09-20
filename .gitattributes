@@ -1,4 +1,13 @@
-hooks/session-start text eol=lf
-hooks/user-prompt-submit text eol=lf
-hooks/run-hook.cmd text eol=lf
-*.py text eol=lf
+# Everything the plugin ships to a hook must arrive LF, whatever the reader's
+# core.autocrlf says. A CR in a shebang script makes bash fail with a cryptic
+# "\r: command not found", and a CR in the injected block puts a literal \r on
+# every line of the agent's context.
+hooks/session-start        text eol=lf
+hooks/user-prompt-submit   text eol=lf
+hooks/run-hook.cmd         text eol=lf
+hooks/bootstrap-block.md   text eol=lf
+hooks/hooks.json           text eol=lf
+
+skills/**/*.md             text eol=lf
+commands/*.md              text eol=lf
+*.py                       text eol=lf

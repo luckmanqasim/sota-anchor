@@ -431,3 +431,32 @@ class TestMcpPortability:
     def test_server_does_not_assume_the_cli_is_on_path(self):
         server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
         assert server["command"] != "sota-anchor"
+
+
+class TestLineEndingResilience:
+    """A fresh clone with core.autocrlf=true checked out bootstrap-block.md as
+    CRLF, and every line of injected context arrived carrying a literal \r.
+    The hook must not depend on the reader's git configuration.
+    """
+
+    def test_carriage_returns_are_stripped_from_the_injected_block(self, tmp_path):
+        from sota_anchor.seed import SEED_FILENAME
+
+        (tmp_path / SEED_FILENAME).write_bytes(b"line one\r\nline two\r\n")
+        runner = TestHookExecution()
+        result = runner._run(
+            "session-start",
+            env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+        )
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "\r" not in context
+        assert context == "line one\nline two"
+
+    def test_bootstrap_block_is_declared_lf_in_gitattributes(self):
+        attributes = (REPO / ".gitattributes").read_text(encoding="utf-8")
+        assert "hooks/bootstrap-block.md" in attributes
+
+    def test_every_shipped_hook_file_is_declared_lf(self):
+        attributes = (REPO / ".gitattributes").read_text(encoding="utf-8")
+        for shipped in ("session-start", "user-prompt-submit", "run-hook.cmd", "bootstrap-block.md"):
+            assert shipped in attributes, shipped

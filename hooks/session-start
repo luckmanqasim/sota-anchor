@@ -67,6 +67,11 @@ fi
 
 [ -n "$body" ] || exit 0
 
+# Strip CR regardless of how the reader's git checked these files out. A clone
+# with core.autocrlf=true delivered bootstrap-block.md as CRLF, and every line
+# of injected context arrived carrying a literal \r.
+body="${body//$'\r'/}"
+
 escaped="$(escape_for_json "$body")"
 
 # Claude Code reads hookSpecificOutput.additionalContext, and also a top-level
