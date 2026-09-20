@@ -42,7 +42,8 @@ VERIFY_DESCRIPTION = (
     "stage in any domain. Call it with just the pitch first: it returns an "
     "inversion prompt asking what would have to be impossible for the design to "
     "be justified. Answer that, then call again with verification_query set, and "
-    "it returns dated evidence plus the protocol for judging against it."
+    "it returns dated evidence plus the protocol for judging against it. Raise "
+    "months if a first pass returns nothing usable."
 )
 
 
@@ -96,7 +97,11 @@ def build_server(
         return json.dumps(catalog_payload(catalog), indent=2)
 
     @mcp.tool(description=VERIFY_DESCRIPTION)
-    async def verify_architecture_tool(pitch: str, verification_query: str | None = None) -> str:
+    async def verify_architecture_tool(
+        pitch: str,
+        verification_query: str | None = None,
+        months: int = DEFAULT_WINDOW_MONTHS,
+    ) -> str:
         try:
             llm = build_llm()
         except LLMUnavailable:
@@ -111,7 +116,7 @@ def build_server(
                     pitch,
                     verification_query=verification_query,
                     gather=gather_evidence,
-                    months=DEFAULT_WINDOW_MONTHS,
+                    months=months,
                 )
             except ValueError as error:
                 return f"sota-anchor cannot verify this proposal: {error}"
@@ -122,7 +127,7 @@ def build_server(
                 pitch,
                 llm=llm,
                 gather=gather_evidence,
-                months=DEFAULT_WINDOW_MONTHS,
+                months=months,
             )
         except (ArbiterError, CatalogUnavailable) as error:
             return f"sota-anchor could not complete verification: {error}"

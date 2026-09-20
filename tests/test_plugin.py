@@ -416,3 +416,18 @@ class TestHookExecution:
         result = self._run("user-prompt-submit", env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
                            stdin='{"prompt": "this is impossible, work around it"}')
         assert "decision" not in json.loads(result.stdout)["hookSpecificOutput"]
+
+
+class TestMcpPortability:
+    """`command: "sota-anchor"` needs the package on PATH, and a live session
+    reported the server failing to connect for exactly that reason. Running it
+    from the plugin's own checkout removes the manual install step.
+    """
+
+    def test_server_runs_from_the_plugin_directory(self):
+        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        assert "${CLAUDE_PLUGIN_ROOT}" in " ".join(server["args"])
+
+    def test_server_does_not_assume_the_cli_is_on_path(self):
+        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        assert server["command"] != "sota-anchor"

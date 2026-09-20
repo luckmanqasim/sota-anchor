@@ -39,13 +39,12 @@ window, or when the registry has expired it.
 
 **Channel 2 — capability anchoring.** A three-stage pipeline:
 
-1. **Invert.** Given a proposal, ask an LLM what would have to be hard,
-   impossible or inaccurate for that design to be justified. It returns a
-   falsifiable claim plus a search query — both produced by the model, not looked
-   up.
+1. **Invert.** Given a proposal, work out what would have to be hard, impossible
+   or inaccurate for that design to be justified. The output is a falsifiable
+   claim plus a search query — reasoned about, not looked up in a table.
 2. **Differ.** Query arXiv and GitHub for work from the past 6–12 months on that
-   query.
-3. **Judge.** Ask whether the evidence has retired the claim. If it has, the
+   query. This is the deterministic part, and the part the plugin does.
+3. **Judge.** Decide whether the evidence has retired the claim. If it has, the
    answer comes back as an assertion, its reason, and the link between them:
 
 ```
@@ -59,21 +58,68 @@ window, or when the registry has expired it.
 
 ---
 
-## Install
+## Install as a Claude Code plugin
+
+This is the primary way to use it, and it needs **no LLM API key**. The host
+session does the reasoning; the plugin does the retrieval.
+
+```bash
+git clone https://github.com/sota-anchor/sota-anchor
+claude --plugin-dir ./sota-anchor          # try it for one session
+claude plugin validate ./sota-anchor       # check the manifests
+```
+
+Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/). The bundled MCP
+server runs out of the plugin's own checkout, so there is nothing to `pip
+install` first.
+
+What you get:
+
+- **A `SessionStart` hook** that injects the current frontier lineup and the
+  superseded identifiers not to reach for — into *every* session, including one
+  started in an empty directory where there is no `CLAUDE.md` to read. Costs
+  ~160 ms, because it reads a block rendered ahead of time rather than starting
+  an interpreter or touching the network.
+- **A `sota-architect` skill** that runs the verification protocol.
+- **`/sota-check <design>`** and **`/sota-sync`** slash commands.
+- **An MCP server** exposing `models://active` and `verify_architecture`.
+- **An optional `UserPromptSubmit` hook**, inert unless you set
+  `SOTA_ANCHOR_PROMPT_HOOK=1`, which nudges toward verification when a prompt
+  asserts that something cannot be done. It only ever adds context — it can
+  never block or discard your prompt.
+
+### Zero-key verification
+
+`verify_architecture` is two-phase. Call it with a pitch and it returns an
+*inversion prompt*: what would have to be impossible for this design to be
+justified? Answer that, call again with the `verification_query` you produced,
+and it returns dated, cited evidence plus the protocol for judging against it.
+
+The judging is done by the session you are already in, so there is no second
+model and no second bill. Which puts a lot of weight on one rule, stated in the
+payload and in the skill: **judge only from the evidence, never from training
+data.** The host model is the one carrying the stale priors, so its memory is
+not admissible about its own limits.
+
+## Install as a standalone CLI
 
 ```bash
 uv tool install sota-anchor      # or: uv pip install -e ".[dev]"
 ```
 
-Requires Python 3.11+.
-
 ## Use
 
 ```bash
-# Refresh instruction files from the live registry. Needs no API key.
+# Refresh instruction files and the session block. Needs no API key.
 sota-anchor sync --target all
 
-# Test a proposal. Exits 0 if the limitation still holds, 2 if it is obsolete.
+# Retrieve evidence for a query. Deterministic, no LLM. What the skill calls.
+sota-anchor evidence --query "direct vector polygon extraction technical drawings"
+
+# Print the block the SessionStart hook injects; --refresh rewrites the cache.
+sota-anchor seed
+
+# Test a proposal.
 sota-anchor check "Extract MEP pipe penetrations from PDFs with OCR bounding
                    boxes and geometric snapping heuristics."
 
@@ -86,16 +132,22 @@ provider a model may fall before counting as legacy — raise it for providers
 that ship slowly; `--provider` (repeatable) and `--all-providers` to widen the
 block; `--max-per-provider` (default 4); `--refresh` to bypass the 24-hour cache.
 
-Because `check` exits 2 on an obsolete proposal, it works as a CI gate:
+`check` exit codes are meant for CI: **0** the limitation still holds, **2** the
+proposal is obsolete, **3** no verdict was reached because no key was configured
+and a host model still has to judge. 3 is deliberately not 0 — a gate must not
+read "nobody judged this" as "this is fine".
 
 ```yaml
-- run: sota-anchor check "$(cat docs/design-notes.md)"
+- run: sota-anchor check "$(cat docs/design-notes.md)"   # needs a key for 0/2
 ```
 
 ## Configuration
 
-`sync` needs no credentials — the registry endpoint is public. `check` and the
-`verify_architecture` tool need one API key:
+Nothing here needs an API key. `sync`, `seed` and `evidence` never did — the
+registry and both evidence sources are public — and `check` and
+`verify_architecture` now fall back to the host-driven protocol instead of
+failing. A key is only for a **headless** verdict, where no agent is present to
+answer the protocol:
 
 | Variable | Purpose |
 | --- | --- |
@@ -109,22 +161,25 @@ Because `check` exits 2 on an obsolete proposal, it works as a CI gate:
 An unset `SOTA_ANCHOR_MODEL` is resolved from the catalog at runtime: the model
 that arbitrates obsolescence should not itself be a stale constant.
 
-## MCP setup
+## MCP setup outside the plugin
+
+The plugin ships its own `.mcp.json`, so this is only for wiring the server into
+something else:
 
 ```json
 {
   "mcpServers": {
     "sota-anchor": {
       "command": "sota-anchor",
-      "args": ["serve"],
-      "env": { "SOTA_ANCHOR_API_KEY": "..." }
+      "args": ["serve"]
     }
   }
 }
 ```
 
 Exposes a resource `models://active` (current endpoints and the superseded map,
-as JSON), a tool `verify_architecture(pitch)`, and a prompt `init_project`.
+as JSON), a tool `verify_architecture(pitch, verification_query?, months?)`, and
+a prompt `init_project`.
 
 ---
 
@@ -163,6 +218,13 @@ first rung that returns anything.
 - **The registry occasionally exposes near-duplicate variants** (for example both
   `gemini-3.1-pro-preview` and `gemini-3.1-pro-preview-customtools`), and each
   consumes a slot in the block. Both are genuinely current; it is cosmetic noise.
+- **The plugin needs `uv` (or the CLI on `PATH`).** Retrieval is Python; it
+  cannot be done from bash. Without either, the `SessionStart` hook still injects
+  whatever block is cached and then degrades silently, but the MCP server will
+  report as failed to connect.
+- **The session block can be a day stale.** The hook never blocks on the network:
+  it serves the cached block and refreshes out of band, so a lineup that changed
+  this morning may not appear until the next session. Run `/sota-sync` to force it.
 
 ## On the assertion-reason format
 
@@ -183,7 +245,7 @@ cited as showing it.
 
 ```bash
 uv pip install -e ".[dev]"
-python -m pytest            # 231 tests, all offline
+python -m pytest            # 401 tests, all offline
 ```
 
 The suite never touches the network: HTTP is served through

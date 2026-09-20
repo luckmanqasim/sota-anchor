@@ -222,3 +222,59 @@ class TestTwoPhaseVerifyArchitecture:
         server, _ = keyless
         result = await server.call_tool("verify_architecture", {"pitch": "   "})
         assert text_of(result).strip()
+
+
+class TestWindowParameter:
+    """A live run hit this: the host wanted to widen the window after a thin pass
+    and found the MCP tool hardcoded 12 months, with the CLI its only way out.
+    """
+
+    @pytest.fixture
+    def keyless(self, monkeypatch, raw_models):
+        from sota_anchor import server as module
+
+        async def fake_fetch(**kwargs):
+            return build_catalog(raw_models, now=NOW)
+
+        state: dict[str, object] = {}
+
+        async def fake_gather(query, **kwargs):
+            state["kwargs"] = kwargs
+            return evidence_set("PlanSightRAG")
+
+        def no_key():
+            from sota_anchor.arbiter import LLMUnavailable
+
+            raise LLMUnavailable("no API key found")
+
+        monkeypatch.setattr(module, "fetch_catalog", fake_fetch)
+        monkeypatch.setattr(module, "gather_evidence", fake_gather)
+        monkeypatch.setattr(module, "build_llm", no_key)
+        return module.build_server(), state
+
+    async def test_tool_exposes_a_months_parameter(self, keyless):
+        server, _ = keyless
+        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        assert "months" in (tool.input_schema or {}).get("properties", {})
+
+    async def test_months_is_optional(self, keyless):
+        server, _ = keyless
+        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        assert "months" not in (tool.input_schema or {}).get("required", [])
+
+    async def test_months_reaches_retrieval(self, keyless):
+        server, state = keyless
+        await server.call_tool(
+            "verify_architecture",
+            {"pitch": "a pitch", "verification_query": "a query", "months": 24},
+        )
+        assert state["kwargs"]["months"] == 24
+
+    async def test_default_window_is_used_when_omitted(self, keyless):
+        from sota_anchor.retriever import DEFAULT_WINDOW_MONTHS
+
+        server, state = keyless
+        await server.call_tool(
+            "verify_architecture", {"pitch": "a pitch", "verification_query": "a query"}
+        )
+        assert state["kwargs"]["months"] == DEFAULT_WINDOW_MONTHS

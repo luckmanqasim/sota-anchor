@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "sota-anchor": {
-      "command": "sota-anchor",
-      "args": ["serve"]
+      "command": "uv",
+      "args": ["run", "--quiet", "--directory", "${CLAUDE_PLUGIN_ROOT}", "sota-anchor", "serve"]
     }
   }
 }
