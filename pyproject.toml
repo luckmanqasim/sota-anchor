@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.2.0",
-    "httpx>=0.28.0",
+    "httpx[http2]>=0.28.0",
     "pydantic>=2.10.0",
     "click>=8.1.8",
     "openai>=1.50.0",
