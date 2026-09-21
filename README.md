@@ -262,7 +262,9 @@ python -m pytest            # 480 tests, all offline
 ```
 
 The suite never touches the network: HTTP is served through
-`httpx.MockTransport` and the LLM through an injected fake.
+`httpx.MockTransport` and the LLM through an injected fake, so it needs no
+API keys and cannot be flaked by a third-party service. `ruff check .` is
+clean and both run in CI on Linux and Windows.
 
 ## License
 
