@@ -42,8 +42,12 @@ window, or when the registry has expired it.
 1. **Invert.** Given a proposal, work out what would have to be hard, impossible
    or inaccurate for that design to be justified. The output is a falsifiable
    claim plus a search query — reasoned about, not looked up in a table.
-2. **Differ.** Query arXiv and GitHub for work from the past 6–12 months on that
-   query. This is the deterministic part, and the part the plugin does.
+2. **Differ.** Query arXiv and GitHub for work from the past 6–12 months, using
+   *two* vectors: the task in its own vocabulary, and the broad capability that
+   would make the workaround unnecessary. A narrow query misses a general
+   advance indexed under other terminology; a broad one misses work that only
+   names the specific task. This is the deterministic part, and the part the
+   plugin does.
 3. **Judge.** Decide whether the evidence has retired the claim. If it has, the
    answer comes back as an assertion, its reason, and the link between them:
 
@@ -181,6 +185,14 @@ Exposes a resource `models://active` (current endpoints and the superseded map,
 as JSON), a tool `verify_architecture(pitch, verification_query?, months?)`, and
 a prompt `init_project`.
 
+The judging payload states an objective standard rather than a rhetorical one:
+retrieved evidence only, with training data inadmissible in either direction;
+the assumption stands unless evidence documents supersession; and benchmarked
+results preferred over proposed approaches. Frontier grounding comes from a
+dated registry snapshot of what current endpoints *declare* they accept and
+emit — an interface reading, never a performance claim, and never a hardcoded
+list of model capabilities that would itself go stale.
+
 ---
 
 ## Two design decisions worth knowing about
@@ -205,13 +217,14 @@ first rung that returns anything.
 
 ## Known limitations
 
-- **arXiv throttles hard.** It asks for roughly one request every three seconds
-  and enforces it by returning `406` with an empty body from its edge. Ladder
-  rungs are spaced, capped at three, and retried with backoff, but a busy IP can
-  still be turned away — in which case the run reports
-  `arxiv: throttled (HTTP 406) ... skipped for this run` and proceeds on GitHub
-  evidence alone. Check the reported errors before reading a "not obsolete"
-  verdict as reassurance.
+- **arXiv is fussy about its client.** Its edge answers httpx with `406` where
+  it answers curl and urllib with `200`; the discriminator was never isolated
+  despite varying headers, encoding, HTTP version and keep-alive. A refused
+  request therefore retries through urllib, which works. Requests are spaced
+  3.5s apart and kept off reused connections, per its Terms of Use. If both
+  paths fail the run reports `arxiv: throttled ... skipped for this run` and
+  proceeds on GitHub alone — check the reported errors before reading a
+  "not obsolete" verdict as reassurance.
 - **Verdict quality is bounded by the evidence.** A paper's existence is not
   proof that a production-ready primitive exists. Treat an obsolescence verdict
   as a prompt to go look, not as a decision.
@@ -245,7 +258,7 @@ cited as showing it.
 
 ```bash
 uv pip install -e ".[dev]"
-python -m pytest            # 401 tests, all offline
+python -m pytest            # 480 tests, all offline
 ```
 
 The suite never touches the network: HTTP is served through
