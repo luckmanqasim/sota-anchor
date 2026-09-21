@@ -13,8 +13,9 @@ import datetime as dt
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -237,12 +238,12 @@ def _as_datetime(value: Any) -> dt.datetime | None:
     if value in (None, "", 0):
         return None
     if isinstance(value, (int, float)):
-        return dt.datetime.fromtimestamp(value, dt.timezone.utc)
+        return dt.datetime.fromtimestamp(value, dt.UTC)
     try:
         parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
 
 
 def _collapse_variants(raw_models: list[dict]) -> dict[str, tuple[dict, list[str]]]:
@@ -285,7 +286,7 @@ def build_catalog(
     for base_id, (raw, variants) in collapsed.items():
         parsed = parse_model_id(base_id)
         created = _as_datetime(raw.get("created")) or dt.datetime.min.replace(
-            tzinfo=dt.timezone.utc
+            tzinfo=dt.UTC
         )
         architecture = raw.get("architecture") or {}
         pricing = raw.get("pricing") or {}
@@ -329,7 +330,7 @@ def build_catalog(
         groups.setdefault((entry.provider, entry.lineage), []).append(entry)
 
     expirations = {
-        base_id: _as_datetime((raw.get("expiration_date")))
+        base_id: _as_datetime(raw.get("expiration_date"))
         for base_id, (raw, _) in collapsed.items()
     }
 
@@ -381,7 +382,9 @@ def _write_cache(cache_path: Path, raw_models: list[dict], fetched_at: dt.dateti
         "source": CATALOG_URL,
         "models": raw_models,
     }
-    handle = tempfile.NamedTemporaryFile(
+    # delete=False is required: the file must be closed before os.replace
+    # can move it into place atomically. `with handle:` below closes it.
+    handle = tempfile.NamedTemporaryFile(  # noqa: SIM115
         "w",
         encoding="utf-8",
         dir=cache_path.parent,
@@ -412,7 +415,7 @@ async def fetch_catalog(
     The cache stores the raw registry payload rather than tiered output, so
     changing ``staleness_months`` re-tiers without a refetch.
     """
-    now = now or dt.datetime.now(dt.timezone.utc)
+    now = now or dt.datetime.now(dt.UTC)
     cache_path = cache_path or default_cache_path()
 
     cached = _read_cache(cache_path)

@@ -15,12 +15,14 @@ import re
 import unicodedata
 import urllib.request
 import xml.etree.ElementTree as ET
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Literal
 from urllib.parse import quote, urlencode
-from typing import Literal, Sequence
 
 import httpx
 from pydantic import BaseModel, Field
+
+from . import __version__
 
 ARXIV_URL = "https://export.arxiv.org/api/query"
 GITHUB_URL = "https://api.github.com/search/repositories"
@@ -58,22 +60,13 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 #: "the" and "from" is grammar, and it is what keeps the AND-join specific enough
 #: to matter without encoding anything about a domain.
 STOPWORDS = frozenset(
-    """
-    a an the and or but nor for yet so of in on at to from by with without into onto
-    upon about above below over under between among through during before after since
-    is are was were be been being am do does did doing done have has had having
-    can cannot could shall should will would may might must not no nor only just
-    that this these those there here it its they them their which who whom whose what
-    when where why how all any both each few more most other some such than too very
-    we our you your he she his her him me my i us
-    using use used via as if then else also etc per
-    """.split()
+    ["a", "an", "the", "and", "or", "but", "nor", "for", "yet", "so", "of", "in", "on", "at", "to", "from", "by", "with", "without", "into", "onto", "upon", "about", "above", "below", "over", "under", "between", "among", "through", "during", "before", "after", "since", "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "doing", "done", "have", "has", "had", "having", "can", "cannot", "could", "shall", "should", "will", "would", "may", "might", "must", "not", "no", "nor", "only", "just", "that", "this", "these", "those", "there", "here", "it", "its", "they", "them", "their", "which", "who", "whom", "whose", "what", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "than", "too", "very", "we", "our", "you", "your", "he", "she", "his", "her", "him", "me", "my", "i", "us", "using", "use", "used", "via", "as", "if", "then", "else", "also", "etc", "per"]
 )
 
 Source = Literal["arxiv", "github"]
 
 USER_AGENT = (
-    "sota-anchor/0.1 (+https://github.com/luckmanqasim/sota-anchor; "
+    f"sota-anchor/{__version__} (+https://github.com/luckmanqasim/sota-anchor; "
     ")"
 )
 
@@ -161,6 +154,8 @@ class EvidenceSet(BaseModel):
 
 def _asciify(text: str) -> str:
     """Flatten to ASCII so output survives a cp1252 console."""
+    # Escapes rather than literals: this table exists to match these exact
+    # code points, and a literal smart quote in source is easy to mangle.
     folded = (
         text.replace("—", "-")
         .replace("–", "-")
@@ -386,7 +381,7 @@ async def _search_arxiv(
                 raise
             try:
                 payload = await fallback(arxiv_url(query_params))
-            except Exception as error:  # noqa: BLE001 - reported, never raised onward
+            except Exception as error:
                 raise Throttled("arxiv", 406) from error
 
         try:
@@ -546,7 +541,7 @@ async def gather_evidence(
     partial evidence is useful, and a total outage must be visible to the caller
     rather than silently looking like "nothing has changed".
     """
-    now = now or dt.datetime.now(dt.timezone.utc)
+    now = now or dt.datetime.now(dt.UTC)
     owns_client = client is None
     client = client or make_client()
     sleep = sleep or asyncio.sleep
@@ -584,7 +579,7 @@ async def gather_evidence(
             await client.aclose()
 
     evidence = EvidenceSet(window_months=months)
-    for name, result in zip(("arxiv", "github"), results):
+    for name, result in zip(("arxiv", "github"), results, strict=True):
         if isinstance(result, Throttled):
             evidence.errors.append(f"{name}: {result}")
         elif isinstance(result, BaseException):

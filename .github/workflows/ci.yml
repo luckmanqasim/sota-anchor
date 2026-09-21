@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is in the matrix deliberately: the hook scripts, the atomic
+        # writes and the cp1252 console handling are the parts most likely to
+        # break there, and they were all written against it.
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: uv pip install --system -e ".[dev]" ruff
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        # The suite is entirely offline -- HTTP goes through httpx.MockTransport
+        # and the LLM through an injected fake -- so this needs no secrets and
+        # cannot be flaked by a third-party API.
+        run: python -m pytest -q
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate plugin manifests
+        # Parses .claude-plugin/plugin.json, hooks/hooks.json and .mcp.json, and
+        # checks that hooks.json points at scripts that exist.
+        run: python -m json.tool .claude-plugin/plugin.json > /dev/null
+          && python -m json.tool hooks/hooks.json > /dev/null
+          && python -m json.tool .mcp.json > /dev/null
+          && test -x hooks/run-hook.cmd -o -f hooks/run-hook.cmd
+          && test -f hooks/session-start
+          && test -f hooks/user-prompt-submit
+          && echo "plugin manifests OK"

@@ -7,12 +7,12 @@ missing gives it something to act on.
 
 from __future__ import annotations
 
-import datetime as dt
 import json
-from typing import Sequence
+from collections.abc import Sequence
 
 from mcp.server import MCPServer
 
+from . import __version__
 from .arbiter import (
     ArbiterError,
     LLMClient,
@@ -81,7 +81,7 @@ def build_server(
 ) -> MCPServer:
     mcp = MCPServer(
         SERVER_NAME,
-        version="0.1.0",
+        version=__version__,
         instructions=(
             "Consult models://active before writing any model identifier, and call "
             "verify_architecture before committing to a workaround for a claimed "

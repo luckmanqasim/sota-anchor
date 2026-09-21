@@ -509,3 +509,38 @@ class TestSkillToolPriority:
 
     def test_skill_carries_no_rhetorical_framing(self):
         assert "abandon work" not in self._body().lower()
+
+
+class TestVersionSingleSource:
+    """The version appeared in five places by hand. Any one could drift."""
+
+    def test_package_exposes_a_version(self):
+        import sota_anchor
+
+        assert sota_anchor.__version__
+
+    def test_plugin_manifest_matches_the_package(self):
+        import sota_anchor
+
+        assert load(PLUGIN_MANIFEST)["version"] == sota_anchor.__version__
+
+    def test_cli_reports_the_package_version(self):
+        from click.testing import CliRunner
+
+        import sota_anchor
+        from sota_anchor.cli import main
+
+        assert sota_anchor.__version__ in CliRunner().invoke(main, ["--version"]).output
+
+    def test_user_agent_carries_the_package_version(self):
+        import sota_anchor
+        from sota_anchor.retriever import USER_AGENT
+
+        assert sota_anchor.__version__ in USER_AGENT
+
+    def test_no_module_hardcodes_a_version_literal(self):
+        import re
+
+        for module in ("cli.py", "server.py", "retriever.py"):
+            source = (REPO / "src" / "sota_anchor" / module).read_text(encoding="utf-8")
+            assert not re.search(r'"\d+\.\d+\.\d+"', source), module

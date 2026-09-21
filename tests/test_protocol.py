@@ -352,7 +352,6 @@ class TestCapabilitySnapshot:
 
     @pytest.fixture
     def snapshot(self, raw_models):
-        import datetime as dt
 
         from sota_anchor.catalog import build_catalog
         from sota_anchor.protocol import render_capability_snapshot

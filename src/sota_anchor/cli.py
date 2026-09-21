@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import contextlib
 import sys
 
 import click
 
+from . import __version__
 from .arbiter import (
     ArbiterError,
     LLMClient,
@@ -63,14 +64,13 @@ def _force_utf8_output() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
-            try:
+            # A stream that cannot be reconfigured is not worth failing over.
+            with contextlib.suppress(ValueError, OSError):
                 reconfigure(encoding="utf-8", errors="replace")
-            except (ValueError, OSError):  # pragma: no cover - stream not reconfigurable
-                pass
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option("0.1.0", prog_name="sota-anchor")
+@click.version_option(__version__, prog_name="sota-anchor")
 def main() -> None:
     """Break epistemic inertia: anchor agents to current models and live capabilities."""
     _force_utf8_output()
@@ -199,7 +199,7 @@ def check(
             "or let your agent answer the protocol above.)",
             err=True,
         )
-        raise SystemExit(EXIT_INDETERMINATE)
+        raise SystemExit(EXIT_INDETERMINATE) from error
 
     try:
         report = asyncio.run(

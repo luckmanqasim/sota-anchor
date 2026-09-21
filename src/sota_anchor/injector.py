@@ -89,7 +89,9 @@ def _render_frontmatter(values: dict[str, object]) -> str:
 
 def _atomic_write(path: Path, text: str, newline: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
+    # delete=False is required: the file must be closed before os.replace
+    # can move it into place atomically. `with handle:` below closes it.
+    handle = tempfile.NamedTemporaryFile(  # noqa: SIM115
         "w",
         encoding="utf-8",
         newline=newline,

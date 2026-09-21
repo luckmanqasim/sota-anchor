@@ -40,6 +40,8 @@ PARADIGM_HEADER = "[SOTA ARBITER PARADIGM SHIFT]"
 
 def _asciify(text: str) -> str:
     """Flatten to ASCII; these payloads cross hook stdout and cp1252 consoles."""
+    # Escapes rather than literals: this table exists to match these exact
+    # code points, and a literal smart quote in source is easy to mangle.
     folded = (
         text.replace("—", "-")
         .replace("–", "-")

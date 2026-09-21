@@ -17,8 +17,9 @@ import datetime as dt
 import os
 import tempfile
 import textwrap
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any
 
 from .catalog import (
     DEFAULT_MAX_PER_PROVIDER,
@@ -193,7 +194,9 @@ def write_seed(block: str, *, path: Path | None = None) -> Path:
     """Write the block atomically as UTF-8, whatever the platform default is."""
     target = Path(path) if path is not None else seed_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    handle = tempfile.NamedTemporaryFile(
+    # delete=False is required: the file must be closed before os.replace
+    # can move it into place atomically. `with handle:` below closes it.
+    handle = tempfile.NamedTemporaryFile(  # noqa: SIM115
         "w",
         encoding="utf-8",
         newline="\n",
@@ -218,9 +221,9 @@ def is_stale(path: Path, *, now: dt.datetime | None = None, ttl_hours: int = SEE
     The hook makes the same judgement in pure bash with `find -mmin`; this is the
     Python-side equivalent for the CLI and tests.
     """
-    now = now or dt.datetime.now(dt.timezone.utc)
+    now = now or dt.datetime.now(dt.UTC)
     try:
-        modified = dt.datetime.fromtimestamp(Path(path).stat().st_mtime, dt.timezone.utc)
+        modified = dt.datetime.fromtimestamp(Path(path).stat().st_mtime, dt.UTC)
     except OSError:
         return True
     return modified + dt.timedelta(hours=ttl_hours) <= now

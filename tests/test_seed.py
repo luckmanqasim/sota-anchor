@@ -140,18 +140,18 @@ class TestStaleness:
     def test_a_fresh_file_is_not_stale(self, tmp_path):
         target = tmp_path / SEED_FILENAME
         write_seed("block", path=target)
-        assert is_stale(target, now=dt.datetime.now(dt.timezone.utc)) is False
+        assert is_stale(target, now=dt.datetime.now(dt.UTC)) is False
 
     def test_a_file_older_than_the_ttl_is_stale(self, tmp_path):
         target = tmp_path / SEED_FILENAME
         write_seed("block", path=target)
-        later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=25)
+        later = dt.datetime.now(dt.UTC) + dt.timedelta(hours=25)
         assert is_stale(target, now=later) is True
 
     def test_the_ttl_is_configurable(self, tmp_path):
         target = tmp_path / SEED_FILENAME
         write_seed("block", path=target)
-        later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2)
+        later = dt.datetime.now(dt.UTC) + dt.timedelta(hours=2)
         assert is_stale(target, now=later, ttl_hours=1) is True
         assert is_stale(target, now=later, ttl_hours=48) is False
 
@@ -246,7 +246,7 @@ class TestForbiddenSelection:
 
     def test_never_forbids_something_it_also_recommends(self, catalog):
         rendered = render_seed(catalog)
-        active, forbidden = rendered.split("do not reach for:")
+        _active, forbidden = rendered.split("do not reach for:")
         for model in catalog.featured():
             assert model.id not in forbidden
 

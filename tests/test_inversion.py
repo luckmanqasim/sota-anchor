@@ -172,7 +172,6 @@ class TestModelResolution:
         assert await resolve_model(settings, fetch=explode) == "acme/pinned"
 
     async def test_picks_a_current_model_from_the_catalog(self, raw_models):
-        import datetime as dt
 
         from sota_anchor.arbiter import resolve_model
         from sota_anchor.catalog import build_catalog

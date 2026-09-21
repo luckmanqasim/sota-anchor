@@ -7,7 +7,6 @@ import pytest
 from sota_anchor.injector import (
     BLOCK_END,
     BLOCK_START,
-    Target,
     inject,
     resolve_targets,
     sync_targets,

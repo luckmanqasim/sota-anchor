@@ -234,7 +234,9 @@ class LLMClient:
                 return _parse_json_object(raw)
             except ValueError as error:
                 last_error = error
-        raise ArbiterError(f"model did not return a JSON object: {last_error}")
+        raise ArbiterError(
+            f"model did not return a JSON object: {last_error}"
+        ) from last_error
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:
@@ -246,10 +248,10 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
 
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except ValueError as error:
         start, end = text.find("{"), text.rfind("}")
         if start == -1 or end <= start:
-            raise ValueError("no JSON object found in output")
+            raise ValueError("no JSON object found in output") from error
         parsed = json.loads(text[start : end + 1])
 
     if not isinstance(parsed, dict):
@@ -379,6 +381,8 @@ async def judge(inversion: Inversion, evidence: EvidenceSet, *, llm: JSONComplet
 def _asciify(text: str) -> str:
     import unicodedata
 
+    # Escapes rather than literals: this table exists to match these exact
+    # code points, and a literal smart quote in source is easy to mangle.
     folded = (
         text.replace("—", "-")
         .replace("–", "-")
@@ -409,7 +413,7 @@ class Report(BaseModel):
     inversion: Inversion
     evidence: EvidenceSet
     verdict: Verdict
-    checked_at: dt.datetime = Field(default_factory=lambda: dt.datetime.now(dt.timezone.utc))
+    checked_at: dt.datetime = Field(default_factory=lambda: dt.datetime.now(dt.UTC))
 
     def render(self) -> str:
         lines: list[str] = []
@@ -452,7 +456,7 @@ async def verify_architecture(
 ) -> Report:
     """Run the full three-stage pipeline over an arbitrary technical proposal."""
     gather = gather or gather_evidence
-    now = now or dt.datetime.now(dt.timezone.utc)
+    now = now or dt.datetime.now(dt.UTC)
 
     inversion = await invert(proposal, llm=llm)
     evidence = await gather(

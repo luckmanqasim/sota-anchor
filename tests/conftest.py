@@ -6,12 +6,12 @@ import datetime as dt
 
 import pytest
 
-NOW = dt.datetime(2026, 9, 19, tzinfo=dt.timezone.utc)
+NOW = dt.datetime(2026, 9, 19, tzinfo=dt.UTC)
 
 
 def ts(year: int, month: int, day: int) -> int:
     """Unix timestamp, the form OpenRouter uses for `created`."""
-    return int(dt.datetime(year, month, day, tzinfo=dt.timezone.utc).timestamp())
+    return int(dt.datetime(year, month, day, tzinfo=dt.UTC).timestamp())
 
 
 def or_model(

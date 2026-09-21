@@ -32,6 +32,7 @@ Issues = "https://github.com/luckmanqasim/sota-anchor/issues"
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
 ]
 
 [project.scripts]
@@ -52,3 +53,22 @@ filterwarnings = ["error"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+# Pinned explicitly so a contributor on a different ruff version gets the same
+# result as CI rather than a moving default.
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "RUF015",  # `list(x)[0]` reads more clearly than `next(iter(x))` in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+# These modules flatten smart punctuation to ASCII, so their fold tables must
+# contain the exact code points being replaced. RUF001 calls them ambiguous;
+# here they are the entire point.
+"src/sota_anchor/protocol.py" = ["RUF001"]
+"src/sota_anchor/retriever.py" = ["RUF001"]
+"src/sota_anchor/arbiter.py" = ["RUF001"]
+# Fixtures carry non-ASCII deliberately, to prove the flattening works.
+"tests/*" = ["RUF001"]
