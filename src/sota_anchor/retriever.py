@@ -37,7 +37,16 @@ GITHUB_MAX_TERMS = 4
 #: Both halves are enforced: exceed the rate and it answers 406 with an empty
 #: body, and reuse a keep-alive connection and it answers 406 as well.
 ARXIV_MIN_INTERVAL = 3.5
+#: Widest arXiv query to start from. A six-term AND is effectively guaranteed
+#: empty; a four-term AND returned the one on-target paper for a real proposal.
+#: Starting wider spends the most expensive attempt on a query that cannot match.
+ARXIV_MAX_TERMS = 4
+
+#: Per-vector attempt allowance, and the ceiling across all vectors. A flat
+#: shared budget was too shallow: three attempts split across two vectors let
+#: neither relax past its first rung.
 MAX_ARXIV_ATTEMPTS = 3
+ARXIV_TOTAL_CAP = 6
 MAX_GITHUB_ATTEMPTS = 3
 MAX_RETRIES = 2
 RETRY_BACKOFF_SECONDS = 5.0
@@ -200,9 +209,10 @@ def build_arxiv_queries(text: str) -> list[str]:
         return []
     if len(terms) == 1:
         return [f"all:{terms[0]}"]
+    widest = min(len(terms), ARXIV_MAX_TERMS)
     return [
         " AND ".join(f"all:{term}" for term in terms[:size])
-        for size in range(len(terms), MIN_TERMS - 1, -1)
+        for size in range(widest, MIN_TERMS - 1, -1)
     ]
 
 
@@ -338,13 +348,14 @@ async def _search_arxiv(
             if depth < len(ladder):
                 rungs.append((vector, ladder[depth]))
 
+    budget = min(MAX_ARXIV_ATTEMPTS * len(ladders), ARXIV_TOTAL_CAP)
     collected: list[Evidence] = []
     seen: set[str] = set()
     satisfied: set[str] = set()
     attempts = 0
 
     for vector, search_query in rungs:
-        if attempts >= MAX_ARXIV_ATTEMPTS or len(collected) >= per_source:
+        if attempts >= budget or len(collected) >= per_source:
             break
         # A vector that has already produced results does not need its looser
         # rungs; relaxation exists to rescue a vector that found nothing.

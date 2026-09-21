@@ -123,8 +123,12 @@ class TestArxivQueryBuilder:
     def test_very_short_tokens_are_dropped(self):
         assert "all:a" not in build_arxiv_queries("a vector polygon extraction")[0]
 
-    def test_three_letter_acronyms_survive(self):
-        assert "all:vlm" in build_arxiv_queries(QUERY)[0]
+    def test_three_letter_acronyms_survive_tokenisation(self):
+        # Not necessarily in the widest rung -- the width cap sheds the shortest
+        # terms first -- but never dropped by the minimum-length filter.
+        from sota_anchor.retriever import extract_terms
+
+        assert "vlm" in extract_terms(QUERY)
 
     def test_ladder_starts_most_specific(self):
         ladder = build_arxiv_queries(QUERY)
@@ -859,8 +863,8 @@ class TestMultiVectorRetrieval:
         urls = [item.url for item in evidence.items]
         assert len(urls) == len(set(urls))
 
-    async def test_arxiv_budget_is_shared_not_multiplied(self):
-        from sota_anchor.retriever import MAX_ARXIV_ATTEMPTS
+    async def test_arxiv_budget_does_not_grow_without_bound(self):
+        from sota_anchor.retriever import ARXIV_TOTAL_CAP
 
         attempts = 0
 
@@ -880,8 +884,9 @@ class TestMultiVectorRetrieval:
                 client=client, now=NOW, months=12, sleep=fake_sleep,
             )
 
-        # Three vectors must not mean three full ladders against a throttled host.
-        assert attempts <= MAX_ARXIV_ATTEMPTS
+        # The budget scales with vector count but stops at a ceiling: three
+        # vectors must not mean three full ladders against a throttled host.
+        assert attempts <= ARXIV_TOTAL_CAP
 
     async def test_arxiv_vectors_are_queried_sequentially(self):
         # "limit requests to a single connection at a time" -- never concurrent.
@@ -1045,3 +1050,88 @@ class TestArxivFallback:
             await gather_evidence(QUERY, client=client, now=NOW, months=12,
                                   sleep=fake_sleep, arxiv_fallback=fallback)
         assert used is False
+
+
+class TestLadderWidth:
+    """A six-term AND is effectively guaranteed empty on arXiv.
+
+    Observed: a 4-term AND returned the one on-target paper for a real proposal,
+    while 6 terms returned nothing. Starting the ladder at full width spends the
+    most expensive attempt on a query that cannot match, and with two vectors
+    sharing a budget the ladder never reaches a width that would.
+    """
+
+    def test_ladder_starts_no_wider_than_the_cap(self):
+        from sota_anchor.retriever import ARXIV_MAX_TERMS
+
+        ladder = build_arxiv_queries(
+            "MEP pipe penetration extraction construction drawings multimodal"
+        )
+        assert len(ladder[0].split(" AND ")) <= ARXIV_MAX_TERMS
+
+    def test_the_cap_keeps_the_most_salient_terms(self):
+        first = build_arxiv_queries(
+            "MEP pipe penetration extraction construction drawings multimodal"
+        )[0]
+        # Longest terms survive; the shortest are what the cap sheds.
+        assert "all:construction" in first
+        assert "all:mep" not in first
+
+    def test_a_short_query_is_unaffected(self):
+        ladder = build_arxiv_queries("vector polygon extraction")
+        assert len(ladder[0].split(" AND ")) == 3
+
+    def test_ladder_still_relaxes_to_the_floor(self):
+        ladder = build_arxiv_queries(
+            "MEP pipe penetration extraction construction drawings multimodal"
+        )
+        assert min(len(q.split(" AND ")) for q in ladder) == 2
+
+
+class TestBudgetScaling:
+    """The budget scales with vector count, up to a ceiling.
+
+    A flat shared budget was too shallow: three attempts split across two
+    vectors let neither relax past its first rung, so a first-rung miss meant no
+    evidence at all.
+    """
+
+    def _client(self, handler):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def _attempts(self, vectors) -> int:
+        count = 0
+
+        def handler(request):
+            nonlocal count
+            if ARXIV_URL not in str(request.url):
+                return httpx.Response(200, json=repos([]))
+            count += 1
+            return httpx.Response(200, text=atom([]))
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            await gather_evidence(vectors, client=client, now=NOW, months=12, sleep=fake_sleep)
+        return count
+
+    async def test_two_vectors_get_more_attempts_than_one(self):
+        one = await self._attempts(["alpha bravo charlie delta"])
+        two = await self._attempts(["alpha bravo charlie delta", "echo foxtrot golf hotel"])
+        assert two > one
+
+    async def test_each_vector_can_still_relax(self):
+        # Two vectors, each needing at least a second rung to be useful.
+        attempts = await self._attempts(
+            ["alpha bravo charlie delta", "echo foxtrot golf hotel"]
+        )
+        assert attempts >= 4
+
+    async def test_total_is_capped_however_many_vectors(self):
+        from sota_anchor.retriever import ARXIV_TOTAL_CAP
+
+        attempts = await self._attempts(
+            ["alpha bravo charlie", "delta echo foxtrot", "golf hotel india", "juliet kilo lima"]
+        )
+        assert attempts <= ARXIV_TOTAL_CAP
