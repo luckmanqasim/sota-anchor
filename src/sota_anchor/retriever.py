@@ -13,8 +13,10 @@ import calendar
 import datetime as dt
 import re
 import unicodedata
+import urllib.request
 import xml.etree.ElementTree as ET
 from collections.abc import Awaitable, Callable
+from urllib.parse import quote, urlencode
 from typing import Literal, Sequence
 
 import httpx
@@ -30,10 +32,11 @@ MIN_TERMS = 2
 MIN_TERM_LENGTH = 3
 GITHUB_MAX_TERMS = 4
 
-#: arXiv asks for roughly one request every three seconds and enforces it: after a
-#: burst it answers 406 with an empty body from its Fastly edge (and 429 to other
-#: clients). An unthrottled relaxation ladder trips this on the first real query.
-ARXIV_MIN_INTERVAL = 3.0
+#: arXiv's Terms of Use ask for "no more than one request every three seconds,
+#: and limit requests to a single connection at a time". 3.5s leaves margin.
+#: Both halves are enforced: exceed the rate and it answers 406 with an empty
+#: body, and reuse a keep-alive connection and it answers 406 as well.
+ARXIV_MIN_INTERVAL = 3.5
 MAX_ARXIV_ATTEMPTS = 3
 MAX_GITHUB_ATTEMPTS = 3
 MAX_RETRIES = 2
@@ -60,19 +63,40 @@ STOPWORDS = frozenset(
 
 Source = Literal["arxiv", "github"]
 
-USER_AGENT = "sota-anchor/0.1 (+https://github.com/luckmanqasim/sota-anchor)"
+USER_AGENT = (
+    "sota-anchor/0.1 (+https://github.com/luckmanqasim/sota-anchor; "
+    ")"
+)
+
+#: arXiv rejects a request made on a reused connection. Sent per arXiv request;
+#: under HTTP/2 this header is illegal, which is why the client stays on 1.1.
+CLOSE_CONNECTION = {"Connection": "close"}
 
 
 def make_client(timeout: float = 30.0) -> httpx.AsyncClient:
     """The HTTP client this module expects.
 
-    A descriptive User-Agent matters: arXiv's terms ask API clients to identify
-    themselves, and an unidentified burst is the first thing an edge throttles.
+    Keep-alive is disabled deliberately. arXiv answers `406` with an empty body
+    to a request issued on a reused connection: measured against the live
+    endpoint with everything else held identical, a shared keep-alive client
+    got 406 while a fresh connection per request got 200 every time. That is
+    their Terms of Use asking clients to "limit requests to a single connection
+    at a time", enforced.
+
+    The cost is one TCP handshake per request, which is irrelevant next to the
+    3.5s spacing between them. HTTP/2 is off because it multiplexes onto one
+    connection, which is the behaviour being avoided, and because `Connection:
+    close` is not a legal HTTP/2 header.
+
+    The User-Agent names a contact because it is good citizenship. It is not the
+    fix: arXiv's Terms of Use state no User-Agent requirement, and an academic
+    `mailto:` agent was measured still returning 406 over a reused connection.
     """
     return httpx.AsyncClient(
         timeout=timeout,
         follow_redirects=True,
-        http2=True,
+        http2=False,
+        limits=httpx.Limits(max_keepalive_connections=0),
         headers={"User-Agent": USER_AGENT},
     )
 
@@ -216,6 +240,40 @@ def _overlap(text: str, terms: Sequence[str]) -> int:
 
 
 Sleeper = Callable[[float], Awaitable[None]]
+ArxivFallback = Callable[[str], Awaitable[str]]
+
+
+def arxiv_url(params: Sequence[tuple[str, object]]) -> str:
+    """Build an arXiv query URL, percent-encoding spaces.
+
+    Never `+`: arXiv reads it as a literal plus inside `search_query`, which
+    makes the field expression invalid rather than merely unmatched.
+    """
+    return f"{ARXIV_URL}?{urlencode(list(params), quote_via=quote)}"
+
+
+async def fetch_arxiv_via_urllib(url: str, timeout: float = 30.0) -> str:
+    """Fetch through the standard library, off the event loop.
+
+    arXiv's edge answers httpx with 406 where it answers curl and urllib with
+    200. Measured repeatedly on a clean request quota, varying headers, header
+    order, percent-encoding, HTTP version, redirect handling and keep-alive:
+    httpx is refused and urllib is not, and the discriminator was never found.
+    Rather than let the academic channel go dark -- GitHub descriptions cannot
+    demonstrate a capability leap on their own -- a refused request retries here.
+    """
+
+    def _read() -> str:
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", "replace")
+
+    return await asyncio.to_thread(_read)
+
+
+#: Resolved at call time rather than bound as a default argument, so a test
+#: suite can substitute it and stay offline.
+DEFAULT_ARXIV_FALLBACK: ArxivFallback = fetch_arxiv_via_urllib
 
 
 async def _get_with_retry(
@@ -246,43 +304,86 @@ async def _get_with_retry(
 
 
 async def _search_arxiv(
-    text: str,
+    vectors: Sequence[str],
     *,
     client: httpx.AsyncClient,
     now: dt.datetime,
     months: int,
     per_source: int,
     sleep: Sleeper,
+    fallback: ArxivFallback | None = None,
 ) -> list[Evidence]:
-    ladder = build_arxiv_queries(text)[:MAX_ARXIV_ATTEMPTS]
-    if not ladder:
-        return []
-    terms = extract_terms(text)
-    cutoff = _shift_months(now, months).date()
+    """Walk each query vector's relaxation ladder until the shared budget runs out.
 
-    for rung, search_query in enumerate(ladder):
-        if rung:
-            # Space out ladder rungs rather than bursting: a throttled arXiv
-            # returns nothing at all, which is indistinguishable from "no recent
-            # work exists" and would quietly bias every verdict toward "not obsolete".
+    The budget is shared rather than per-vector: against a host that throttles
+    this aggressively, three vectors must not mean three full ladders. Vectors
+    are walked strictly in sequence, never concurrently, because arXiv asks for
+    one connection at a time.
+    """
+    cutoff = _shift_months(now, months).date()
+    ladders = [
+        (vector, build_arxiv_queries(vector))
+        for vector in vectors
+        if build_arxiv_queries(vector)
+    ]
+    if not ladders:
+        return []
+
+    # Interleave rungs so every vector gets its strictest query tried before any
+    # vector's looser ones -- a broad capability query is worth more at rung 0
+    # than a narrow domain query is at rung 2.
+    rungs: list[tuple[str, str]] = []
+    for depth in range(max(len(ladder) for _, ladder in ladders)):
+        for vector, ladder in ladders:
+            if depth < len(ladder):
+                rungs.append((vector, ladder[depth]))
+
+    collected: list[Evidence] = []
+    seen: set[str] = set()
+    satisfied: set[str] = set()
+    attempts = 0
+
+    for vector, search_query in rungs:
+        if attempts >= MAX_ARXIV_ATTEMPTS or len(collected) >= per_source:
+            break
+        # A vector that has already produced results does not need its looser
+        # rungs; relaxation exists to rescue a vector that found nothing.
+        if vector in satisfied:
+            continue
+        if attempts:
             await sleep(ARXIV_MIN_INTERVAL)
-        response = await _get_with_retry(
-            client,
-            ARXIV_URL,
-            params={
-                "search_query": search_query,
-                "sortBy": "submittedDate",
-                "sortOrder": "descending",
-                "max_results": ARXIV_FETCH_SIZE,
-            },
-            sleep=sleep,
-            source="arxiv",
-        )
+        attempts += 1
+
+        query_params = [
+            ("search_query", search_query),
+            ("sortBy", "submittedDate"),
+            ("sortOrder", "descending"),
+            ("max_results", ARXIV_FETCH_SIZE),
+        ]
         try:
-            root = ET.fromstring(response.text)
+            response = await _get_with_retry(
+                client,
+                ARXIV_URL,
+                params=dict(query_params),
+                sleep=sleep,
+                source="arxiv",
+                headers=dict(CLOSE_CONNECTION),
+            )
+            payload = response.text
+        except Throttled:
+            if fallback is None:
+                raise
+            try:
+                payload = await fallback(arxiv_url(query_params))
+            except Exception as error:  # noqa: BLE001 - reported, never raised onward
+                raise Throttled("arxiv", 406) from error
+
+        try:
+            root = ET.fromstring(payload)
         except ET.ParseError:
             raise
 
+        terms = extract_terms(vector)
         found: list[Evidence] = []
         for entry in root.findall(f"{ATOM}entry"):
             title = (entry.findtext(f"{ATOM}title") or "").strip()
@@ -290,6 +391,8 @@ async def _search_arxiv(
             url = (entry.findtext(f"{ATOM}id") or "").strip()
             published = _parse_date(entry.findtext(f"{ATOM}published"))
             if not title or published is None or published < cutoff:
+                continue
+            if url in seen:
                 continue
             found.append(
                 Evidence(
@@ -307,12 +410,16 @@ async def _search_arxiv(
                     -item.published.toordinal(),
                 )
             )
-            return found[:per_source]
-    return []
+            satisfied.add(vector)
+            for item in found[: per_source - len(collected)]:
+                seen.add(item.url)
+                collected.append(item)
+
+    return collected
 
 
 async def _search_github(
-    text: str,
+    vectors: Sequence[str],
     *,
     client: httpx.AsyncClient,
     now: dt.datetime,
@@ -321,13 +428,37 @@ async def _search_github(
     token: str | None,
     sleep: Sleeper,
 ) -> list[Evidence]:
+    """Same ladder and shared budget as arXiv, against repository descriptions."""
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    terms = extract_terms(text)
-    ladder = build_github_queries(text, now=now, months=months)[:MAX_GITHUB_ATTEMPTS]
-    for query in ladder:
+    ladders = [
+        (vector, build_github_queries(vector, now=now, months=months))
+        for vector in vectors
+        if build_github_queries(vector, now=now, months=months)
+    ]
+    if not ladders:
+        return []
+
+    rungs: list[tuple[str, str]] = []
+    for depth in range(max(len(ladder) for _, ladder in ladders)):
+        for vector, ladder in ladders:
+            if depth < len(ladder):
+                rungs.append((vector, ladder[depth]))
+
+    collected: list[Evidence] = []
+    seen: set[str] = set()
+    satisfied: set[str] = set()
+    attempts = 0
+
+    for vector, query in rungs:
+        if attempts >= MAX_GITHUB_ATTEMPTS or len(collected) >= per_source:
+            break
+        if vector in satisfied:
+            continue
+        attempts += 1
+
         response = await _get_with_retry(
             client,
             GITHUB_URL,
@@ -342,6 +473,7 @@ async def _search_github(
             source="github",
         )
 
+        terms = extract_terms(vector)
         found: list[Evidence] = []
         for repo in response.json().get("items") or []:
             description = (repo.get("description") or "").strip()
@@ -350,11 +482,14 @@ async def _search_github(
             published = _parse_date(repo.get("pushed_at"))
             if published is None:
                 continue
+            url = str(repo.get("html_url") or "")
+            if url in seen:
+                continue
             found.append(
                 Evidence(
                     source="github",
                     title=str(repo.get("full_name") or ""),
-                    url=str(repo.get("html_url") or ""),
+                    url=url,
                     published=published,
                     snippet=description[:400],
                 )
@@ -366,8 +501,12 @@ async def _search_github(
                     -item.published.toordinal(),
                 )
             )
-            return found[:per_source]
-    return []
+            satisfied.add(vector)
+            for item in found[: per_source - len(collected)]:
+                seen.add(item.url)
+                collected.append(item)
+
+    return collected
 
 
 def _parse_date(value: str | None) -> dt.date | None:
@@ -380,7 +519,7 @@ def _parse_date(value: str | None) -> dt.date | None:
 
 
 async def gather_evidence(
-    text: str,
+    text: str | Sequence[str],
     *,
     client: httpx.AsyncClient | None = None,
     now: dt.datetime | None = None,
@@ -388,6 +527,7 @@ async def gather_evidence(
     per_source: int = DEFAULT_PER_SOURCE,
     github_token: str | None = None,
     sleep: Sleeper | None = None,
+    arxiv_fallback: ArxivFallback | None = None,
 ) -> EvidenceSet:
     """Query every source concurrently and merge what came back.
 
@@ -400,18 +540,25 @@ async def gather_evidence(
     client = client or make_client()
     sleep = sleep or asyncio.sleep
 
+    # One query or a ladder of vectors; a single string is the common case.
+    arxiv_fallback = arxiv_fallback or DEFAULT_ARXIV_FALLBACK
+    vectors = [text] if isinstance(text, str) else [v for v in text if v and v.strip()]
+    if not vectors:
+        return EvidenceSet(window_months=months)
+
     try:
         results = await asyncio.gather(
             _search_arxiv(
-                text,
+                vectors,
                 client=client,
                 now=now,
                 months=months,
                 per_source=per_source,
                 sleep=sleep,
+                fallback=arxiv_fallback,
             ),
             _search_github(
-                text,
+                vectors,
                 client=client,
                 now=now,
                 months=months,
@@ -438,7 +585,7 @@ async def gather_evidence(
     # would let a barely-related paper from last week outrank the one that
     # actually addresses the question, and the top items carry the most weight in
     # the judge prompt. Everything here already passed the recency window.
-    terms = extract_terms(text)
+    terms = [term for vector in vectors for term in extract_terms(vector)]
     evidence.items.sort(
         key=lambda item: (
             -_overlap(f"{item.title} {item.snippet}", terms),

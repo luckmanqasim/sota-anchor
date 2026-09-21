@@ -31,6 +31,22 @@ QUERY = "multimodal VLM direct vector polygon extraction technical drawings"
 
 
 @pytest.fixture(autouse=True)
+def no_network_fallback(monkeypatch):
+    """Keep the arXiv urllib fallback off the network.
+
+    In production a refused httpx request retries through urllib. Left live,
+    every test that simulates a 406 would make a real call, so the default is
+    replaced with one that refuses. Tests exercising the fallback inject their own.
+    """
+    import sota_anchor.retriever as retriever
+
+    async def offline(url: str) -> str:
+        raise OSError("offline: arXiv fallback disabled in tests")
+
+    monkeypatch.setattr(retriever, "DEFAULT_ARXIV_FALLBACK", offline)
+
+
+@pytest.fixture(autouse=True)
 def no_real_sleeping(monkeypatch):
     """Keep throttle delays out of the clock.
 
@@ -416,12 +432,19 @@ class TestEvidenceRendering:
 
 
 class TestTransport:
-    def test_default_client_negotiates_http2(self):
+    def test_default_client_does_not_use_http2(self):
+        """HTTP/2 was enabled on a false premise and is now off deliberately.
+
+        It looked like the cure for arXiv's 406 during a session where the real
+        variable was an exhausted request quota. The actual cause is connection
+        reuse, and HTTP/2 multiplexes onto one connection -- the exact behaviour
+        to avoid -- besides making `Connection: close` an illegal header.
+        """
         from sota_anchor.retriever import make_client
 
         client = make_client()
         try:
-            assert client._transport._pool._http2 is True
+            assert client._transport._pool._http2 is False
         finally:
             import asyncio
 
@@ -724,3 +747,301 @@ class TestThrottleReporting:
             evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
 
         assert evidence.is_empty is False
+
+
+class TestArxivConnectionHandling:
+    """arXiv answers 406 to a request on a reused keep-alive connection.
+
+    Measured against the live endpoint with everything else held identical:
+    a shared keep-alive client gets 406 with sort parameters present, while a
+    fresh connection per request gets 200 every time. It matches arXiv's Terms
+    of Use, which ask clients to "limit requests to a single connection at a
+    time" -- and which specify no User-Agent requirement at all, so the
+    User-Agent is good citizenship rather than the fix.
+    """
+
+    def _client(self):
+        from sota_anchor.retriever import make_client
+
+        return make_client()
+
+    def test_client_disables_keepalive(self):
+        import asyncio
+
+        client = self._client()
+        try:
+            assert client._transport._pool._max_keepalive_connections == 0
+        finally:
+            asyncio.run(client.aclose())
+
+    def test_user_agent_carries_a_contact(self):
+        import asyncio
+
+        client = self._client()
+        try:
+            agent = client.headers["User-Agent"]
+            assert "sota-anchor" in agent
+            assert "mailto:" in agent or "http" in agent
+        finally:
+            asyncio.run(client.aclose())
+
+    async def test_arxiv_requests_ask_the_connection_to_close(self):
+        seen: list[str] = []
+
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                seen.append(request.headers.get("connection", ""))
+                return httpx.Response(200, text=atom([("X", "2026-08-01T10:00:00Z", "vector")]))
+            return httpx.Response(200, json=repos([]))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await gather_evidence(QUERY, client=client, now=NOW, months=12)
+
+        assert seen and all(value.lower() == "close" for value in seen)
+
+    def test_spacing_respects_the_published_rate_limit(self):
+        from sota_anchor.retriever import ARXIV_MIN_INTERVAL
+
+        # arXiv asks for no more than one request every three seconds.
+        assert ARXIV_MIN_INTERVAL >= 3.5
+
+
+class TestMultiVectorRetrieval:
+    """A single hyper-specific query misses broad capability leaps indexed under
+    different terminology, so retrieval takes a ladder of query vectors.
+    """
+
+    def _client(self, handler):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def test_accepts_several_query_vectors(self):
+        asked: list[str] = []
+
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                search = parse_qs(urlparse(str(request.url)).query)["search_query"][0]
+                asked.append(search)
+                return httpx.Response(200, text=atom([("Hit", "2026-08-01T10:00:00Z", "vector")]))
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            await gather_evidence(
+                ["floorplan room polygon segmentation", "multimodal polygon grounding"],
+                client=client, now=NOW, months=12,
+            )
+
+        assert any("floorplan" in q for q in asked)
+        assert any("grounding" in q for q in asked)
+
+    async def test_a_single_string_still_works(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(200, text=atom([("Hit", "2026-08-01T10:00:00Z", "vector")]))
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+        assert evidence.items
+
+    async def test_results_are_deduplicated_across_vectors(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(
+                    200, text=atom([("Same paper", "2026-08-01T10:00:00Z", "vector polygon")])
+                )
+            return httpx.Response(200, json=repos([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(
+                ["query one alpha", "query two beta"], client=client, now=NOW, months=12
+            )
+
+        urls = [item.url for item in evidence.items]
+        assert len(urls) == len(set(urls))
+
+    async def test_arxiv_budget_is_shared_not_multiplied(self):
+        from sota_anchor.retriever import MAX_ARXIV_ATTEMPTS
+
+        attempts = 0
+
+        def handler(request):
+            nonlocal attempts
+            if ARXIV_URL not in str(request.url):
+                return httpx.Response(200, json=repos([]))
+            attempts += 1
+            return httpx.Response(200, text=atom([]))
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            await gather_evidence(
+                ["alpha beta gamma", "delta epsilon zeta", "eta theta iota"],
+                client=client, now=NOW, months=12, sleep=fake_sleep,
+            )
+
+        # Three vectors must not mean three full ladders against a throttled host.
+        assert attempts <= MAX_ARXIV_ATTEMPTS
+
+    async def test_arxiv_vectors_are_queried_sequentially(self):
+        # "limit requests to a single connection at a time" -- never concurrent.
+        concurrent = 0
+        peak = 0
+
+        async def handler(request):
+            nonlocal concurrent, peak
+            if ARXIV_URL in str(request.url):
+                concurrent += 1
+                peak = max(peak, concurrent)
+                await asyncio.sleep(0)
+                concurrent -= 1
+                return httpx.Response(200, text=atom([]))
+            return httpx.Response(200, json=repos([]))
+
+        import asyncio
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await gather_evidence(
+                ["alpha beta", "gamma delta"], client=client, now=NOW, months=12, sleep=fake_sleep
+            )
+        assert peak <= 1
+
+    async def test_an_empty_vector_list_retrieves_nothing(self):
+        called = False
+
+        def handler(request):
+            nonlocal called
+            called = True
+            return httpx.Response(200, text=atom([]))
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence([], client=client, now=NOW, months=12)
+
+        assert evidence.is_empty
+        assert called is False
+
+
+class TestArxivFallback:
+    """arXiv's edge rejects httpx with 406 where curl and urllib get 200.
+
+    Measured repeatedly on a clean request quota, with headers, percent-encoding,
+    HTTP version, redirect handling and keep-alive all varied: httpx is refused
+    and urllib is not. The discriminator was never isolated. Since arXiv is the
+    source that carries benchmark depth, and GitHub descriptions alone cannot
+    show a capability leap, a refused httpx request falls back to urllib rather
+    than letting the academic channel go dark.
+    """
+
+    def _client(self, handler):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def test_a_refused_request_falls_back(self):
+        used: list[str] = []
+
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async def fallback(url: str) -> str:
+            used.append(url)
+            return atom([("Rescued paper", "2026-08-26T10:00:00Z", "vector polygon extraction")])
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(
+                QUERY, client=client, now=NOW, months=12,
+                sleep=fake_sleep, arxiv_fallback=fallback,
+            )
+
+        assert used, "fallback was never attempted"
+        assert any(item.title == "Rescued paper" for item in evidence.items)
+
+    async def test_the_fallback_url_percent_encodes_spaces(self):
+        # arXiv reads '+' as a literal plus, which makes the field query invalid.
+        captured: list[str] = []
+
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async def fallback(url: str) -> str:
+            captured.append(url)
+            return atom([])
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            await gather_evidence(QUERY, client=client, now=NOW, months=12,
+                                  sleep=fake_sleep, arxiv_fallback=fallback)
+
+        assert captured
+        assert "%20" in captured[0]
+        assert "+" not in captured[0].split("search_query=")[1].split("&")[0]
+
+    async def test_a_healthy_request_never_reaches_the_fallback(self):
+        used = False
+
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(200, text=atom([("Direct", "2026-08-01T10:00:00Z", "vector")]))
+            return httpx.Response(200, json=repos([]))
+
+        async def fallback(url: str) -> str:
+            nonlocal used
+            used = True
+            return atom([])
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12,
+                                             arxiv_fallback=fallback)
+
+        assert used is False
+        assert any(item.title == "Direct" for item in evidence.items)
+
+    async def test_a_failing_fallback_still_reports_throttling(self):
+        def handler(request):
+            if ARXIV_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async def fallback(url: str) -> str:
+            raise OSError("urllib also refused")
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12,
+                                             sleep=fake_sleep, arxiv_fallback=fallback)
+
+        assert any("arxiv" in error for error in evidence.errors)
+
+    async def test_github_has_no_such_fallback(self):
+        # Only arXiv exhibits the refusal; GitHub must not grow a second path.
+        used = False
+
+        def handler(request):
+            if GITHUB_URL in str(request.url):
+                return httpx.Response(406, text="")
+            return httpx.Response(200, text=atom([]))
+
+        async def fallback(url: str) -> str:
+            nonlocal used
+            used = True
+            return atom([])
+
+        async def fake_sleep(seconds: float) -> None:
+            return None
+
+        async with self._client(handler) as client:
+            await gather_evidence(QUERY, client=client, now=NOW, months=12,
+                                  sleep=fake_sleep, arxiv_fallback=fallback)
+        assert used is False
