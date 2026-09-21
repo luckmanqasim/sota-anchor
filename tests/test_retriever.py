@@ -778,14 +778,18 @@ class TestArxivConnectionHandling:
         finally:
             asyncio.run(client.aclose())
 
-    def test_user_agent_carries_a_contact(self):
+    def test_user_agent_identifies_the_client(self):
+        """Names the tool and where to find it, with no personal address -- the
+        repository is public, and arXiv's Terms of Use require no User-Agent.
+        """
         import asyncio
 
         client = self._client()
         try:
             agent = client.headers["User-Agent"]
             assert "sota-anchor" in agent
-            assert "mailto:" in agent or "http" in agent
+            assert "github.com" in agent
+            assert "mailto:" not in agent
         finally:
             asyncio.run(client.aclose())
 

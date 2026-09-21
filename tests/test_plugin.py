@@ -544,3 +544,44 @@ class TestVersionSingleSource:
         for module in ("cli.py", "server.py", "retriever.py"):
             source = (REPO / "src" / "sota_anchor" / module).read_text(encoding="utf-8")
             assert not re.search(r'"\d+\.\d+\.\d+"', source), module
+
+
+class TestNoPersonalContactInSource:
+    """This repository is public. A personal address in source is scraped, and
+    the User-Agent one was also transmitted to arXiv and GitHub on every request.
+    Contact happens through the repository instead.
+    """
+
+    SOURCE_GLOBS = ("src/**/*.py", "*.toml", ".claude-plugin/*.json", ".mcp.json",
+                    "hooks/*", "skills/**/*.md", "commands/*.md")
+
+    def _tracked_text(self):
+        import glob
+
+        for pattern in self.SOURCE_GLOBS:
+            for path in glob.glob(str(REPO / pattern), recursive=True):
+                candidate = Path(path)
+                if candidate.is_file():
+                    try:
+                        yield candidate, candidate.read_text(encoding="utf-8")
+                    except UnicodeDecodeError:  # pragma: no cover - binary asset
+                        continue
+
+    def test_no_email_address_appears_in_source(self):
+        import re
+
+        pattern = re.compile(r"[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}")
+        offenders = [
+            (path.name, match)
+            for path, text in self._tracked_text()
+            for match in pattern.findall(text)
+            if "noreply@anthropic" not in match
+        ]
+        assert offenders == []
+
+    def test_user_agent_identifies_the_client_by_repository(self):
+        from sota_anchor.retriever import USER_AGENT
+
+        assert "sota-anchor" in USER_AGENT
+        assert "github.com" in USER_AGENT
+        assert "mailto:" not in USER_AGENT

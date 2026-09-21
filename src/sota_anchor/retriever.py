@@ -65,10 +65,7 @@ STOPWORDS = frozenset(
 
 Source = Literal["arxiv", "github"]
 
-USER_AGENT = (
-    f"sota-anchor/{__version__} (+https://github.com/luckmanqasim/sota-anchor; "
-    ")"
-)
+USER_AGENT = f"sota-anchor/{__version__} (+https://github.com/luckmanqasim/sota-anchor)"
 
 #: arXiv rejects a request made on a reused connection. Sent per arXiv request;
 #: under HTTP/2 this header is illegal, which is why the client stays on 1.1.
