@@ -325,8 +325,8 @@ class TestGithubRetrieval:
                 return httpx.Response(200, json=repos([]))
             return httpx.Response(200, text=atom([]))
 
-        await self._gather(handler, github_token="ghp_example")
-        assert seen.get("authorization") == "Bearer ghp_example"
+        await self._gather(handler, github_token="fake-token-for-tests")
+        assert seen.get("authorization") == "Bearer fake-token-for-tests"
 
     async def test_no_auth_header_without_a_token(self):
         seen: dict[str, str] = {}
