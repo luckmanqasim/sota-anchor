@@ -11,7 +11,9 @@ it is answering from documents rather than memory. Everything here is built
 around that constraint:
 
 * evidence comes first in the payload, dated and cited;
-* the protocol says in plain words that memory is not admissible;
+* the burden of proof is stated objectively, with model priors inadmissible;
+* frontier grounding, when supplied, is a dated registry snapshot rather than an
+  assertion about what a named model can do;
 * and when retrieval comes back empty, no judging template is emitted at all.
 
 The module is pure. No network, no filesystem, no LLM client.
@@ -20,10 +22,11 @@ The module is pure. No network, no filesystem, no LLM client.
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .catalog import Catalog
 from .retriever import DEFAULT_WINDOW_MONTHS, EvidenceSet, gather_evidence
 
 PHASE_INVERT = "invert"
@@ -55,7 +58,7 @@ class Payload:
     phase: Phase
     body: str
     pitch: str
-    verification_query: str | None = None
+    queries: tuple[str, ...] = ()
     evidence: EvidenceSet | None = None
 
     def render(self) -> str:
@@ -75,16 +78,22 @@ First, invert it. Identify the engineering assumption the proposal takes for
 granted by answering: what must be hard, impossible, or inaccurate for AI or
 software in this domain for this specific workaround or design to be justified?
 
-Produce these four fields:
+Produce these fields:
 
 - domain: the field this sits in
 - implicit_limitation: the capability claim the design depends on being true
 - proposed_workaround: the machinery being built to route around it
-- verification_query: a short keyword search phrase - not a question - that
-  would surface recent research or code showing the limitation has fallen
+- domain_query: keywords for the specific task, in this domain's own vocabulary
+- capability_query: keywords for the broad, foundational capability that would
+  make the workaround unnecessary, in vocabulary the task's own field may not use
 
-Then call this tool again with the same pitch and your verification_query. Step
-2 will return real, dated evidence and the protocol for judging against it.
+Two queries, not one, because they fail differently. A narrow domain query
+misses a general advance indexed under other terminology; a broad capability
+query misses work that only ever names the specific task. Searching both is what
+catches a foundational leap that never mentions your domain by name.
+
+Then call this tool again with the same pitch and both queries. Step 2 will
+return real, dated evidence and the standard for judging against it.
 """
 
 
@@ -93,27 +102,33 @@ JUDGMENT_TEMPLATE = """[SOTA ARBITER - STEP 2 OF 2: EPISTEMIC CONFLICT JUDGMENT]
 Proposal under review:
 "{pitch}"
 
-Verification query used: {query}
-
+Queries used: {queries}
+{snapshot}
 {evidence}
 
-Judge strictly from the evidence above. Your training data has a cutoff and is
-not admissible here: if the evidence does not itself demonstrate that the
-limitation has fallen, the answer is no. An unsupported "yes" tells a developer
-to abandon work they still need.
+Standard of proof:
 
-If the evidence shows the limitation has been overcome, reply with exactly this
-block, filled in:
+1. Evidence-only invariant. Judge from the evidence above and nothing else.
+   Your training data is not admissible here, in either direction: it can
+   neither establish that the limitation has fallen nor that it holds.
+2. Default baseline. The assumption stands unless the evidence above explicitly
+   documents that a modern primitive, tool or method has superseded it.
+3. Threshold. Prefer evidence that reports benchmarked or demonstrated results
+   over evidence that merely proposes or describes an approach. Absent,
+   incomplete or unbenchmarked evidence does not meet the threshold, and the
+   assumption stands by rule 2.
+
+If the evidence documents supersession, reply with exactly this block, filled in:
 
 {header}
 - Assertion (A): Do NOT implement [the workaround].
-- Reason (R): [the modern native primitive or tool that replaces it, naming the
-  evidence item it comes from].
+- Reason (R): [the modern native primitive or tool that supersedes it, naming
+  the evidence item it comes from].
 - Linkage: Because (R) is true, (A) is obsolete technical debt.
 
-If the evidence does not show that, say so plainly instead: state that the
-limitation still appears genuine, and say what would have to be true to change
-that. Do not emit the block in that case.
+Otherwise state that the assumption stands on this evidence, say what the
+evidence does and does not document, and name what would have to be shown to
+overturn it. Do not emit the block in that case.
 """
 
 
@@ -122,20 +137,66 @@ NO_EVIDENCE_TEMPLATE = """[SOTA ARBITER - NO VERDICT POSSIBLE]
 Proposal under review:
 "{pitch}"
 
-Verification query used: {query}
+Queries used: {queries}
 
-No recent evidence was retrieved for this query.{errors}
+No recent evidence was retrieved.{errors}
 
-This is NOT a finding that the limitation still holds, and it is NOT a finding
-that it has fallen. Nothing was checked. Do not conclude that anything is
-obsolete, and do not produce a paradigm-shift block - with no evidence in front
-of you, any such conclusion would come from training data, which is the thing
-this check exists to distrust.
+Nothing was checked, so nothing was learned. By the default baseline the
+assumption stands, but note precisely why: not because the retrieved record
+documents that it holds, but because there is no retrieved record. Do not state
+or imply that recent work has been surveyed.
 
-Proceed with the original plan. If the question matters, say that verification
-returned nothing and offer to retry, widen the window with --months, or search
-manually.
+Do not produce a paradigm-shift block. With no evidence present, any such
+conclusion would come from training data, which is inadmissible here.
+
+Proceed with the original plan. If the question matters, say that retrieval
+returned nothing and offer to retry, widen the window with a larger months
+value, or search manually.
 """
+
+
+def render_capability_snapshot(catalog: Catalog) -> str:
+    """A dated, attributed statement of what current endpoints *declare*.
+
+    This exists so the judge can tell whether a limitation is premised on
+    something the registry already contradicts - "models only emit prose", say.
+
+    It reports declared interfaces, never asserted skill. Naming models and
+    claiming what they can do would be a static capability dictionary keyed to
+    model names: it would go stale, which is the failure this tool exists to
+    prevent, and an unsourced capability claim is exactly the kind of prior the
+    same prompt rules inadmissible. A dated registry reading is a fact with a
+    source, and it updates itself.
+    """
+    featured = catalog.featured()
+    if not featured:
+        return ""
+
+    lines = [
+        "Registry snapshot, retrieved "
+        f"{catalog.fetched_at.date().isoformat()} from {catalog.source}.",
+        "These endpoints are current, and the registry reports that they declare:",
+        "",
+    ]
+    for model in featured:
+        accepts = "+".join(model.input_modalities) or "unreported"
+        emits = "+".join(model.output_modalities) or "unreported"
+        extras = []
+        if model.supports_tools:
+            extras.append("tool calls")
+        if model.supports_structured_output:
+            extras.append("structured output")
+        suffix = f"; {', '.join(extras)}" if extras else ""
+        lines.append(f"  {model.id} - accepts {accepts}, emits {emits}{suffix}")
+
+    lines += [
+        "",
+        "That is an interface declaration, not a performance claim. It can show",
+        "that an assumption about what a model can accept or emit is already out",
+        "of date; it cannot show how well any of them performs a task. Only the",
+        "evidence below speaks to that.",
+    ]
+    return "\n".join(lines)
 
 
 def build_inversion_request(pitch: str) -> Payload:
@@ -157,26 +218,41 @@ def _render_errors(evidence: EvidenceSet) -> str:
     return f"\n\nRetrieval did not complete cleanly: {joined}"
 
 
-def build_judgment_request(pitch: str, verification_query: str, evidence: EvidenceSet) -> Payload:
-    """Step 2: hand over the evidence and the protocol - or refuse.
+def _normalise_queries(queries: str | Sequence[str] | None) -> tuple[str, ...]:
+    if queries is None:
+        return ()
+    if isinstance(queries, str):
+        queries = [queries]
+    return tuple(q.strip() for q in queries if q and q.strip())
+
+
+def build_judgment_request(
+    pitch: str,
+    queries: str | Sequence[str],
+    evidence: EvidenceSet,
+    *,
+    catalog: Catalog | None = None,
+) -> Payload:
+    """Step 2: hand over the evidence and the standard - or refuse.
 
     With an empty evidence set this returns the refusal directive rather than a
     judging template. The distinction is the whole guard: a model given an
     Assertion-Reason form and nothing to fill it from will fill it from priors.
     """
     cleaned = pitch.strip()
-    query = verification_query.strip()
+    used = _normalise_queries(queries)
+    shown = ", ".join(used) if used else "(none)"
 
     if evidence.is_empty:
         return Payload(
             phase=PHASE_NO_EVIDENCE,
             body=_asciify(
                 NO_EVIDENCE_TEMPLATE.format(
-                    pitch=cleaned, query=query or "(none)", errors=_render_errors(evidence)
+                    pitch=cleaned, queries=shown, errors=_render_errors(evidence)
                 )
             ),
             pitch=cleaned,
-            verification_query=query or None,
+            queries=used,
             evidence=evidence,
         )
 
@@ -184,15 +260,22 @@ def build_judgment_request(pitch: str, verification_query: str, evidence: Eviden
     if evidence.errors:
         block += _render_errors(evidence)
 
+    snapshot = render_capability_snapshot(catalog) if catalog is not None else ""
+    snapshot_block = f"\n{snapshot}\n" if snapshot else ""
+
     return Payload(
         phase=PHASE_JUDGE,
         body=_asciify(
             JUDGMENT_TEMPLATE.format(
-                pitch=cleaned, query=query, evidence=block, header=PARADIGM_HEADER
+                pitch=cleaned,
+                queries=shown,
+                snapshot=snapshot_block,
+                evidence=block,
+                header=PARADIGM_HEADER,
             )
         ),
         pitch=cleaned,
-        verification_query=query,
+        queries=used,
         evidence=evidence,
     )
 
@@ -203,8 +286,10 @@ EvidenceGatherer = Callable[..., Awaitable[EvidenceSet]]
 async def build_verification_payload(
     pitch: str,
     *,
-    verification_query: str | None = None,
+    domain_query: str | None = None,
+    capability_query: str | None = None,
     gather: EvidenceGatherer | None = None,
+    catalog: Catalog | None = None,
     months: int = DEFAULT_WINDOW_MONTHS,
     **gather_kwargs: Any,
 ) -> Payload:
@@ -212,10 +297,12 @@ async def build_verification_payload(
 
     No query means the inversion has not happened yet, so nothing is retrieved -
     searching on the raw pitch would look busy while querying the wrong thing.
+    Either vector alone is enough to proceed; both is better.
     """
-    if not verification_query or not verification_query.strip():
+    vectors = _normalise_queries([domain_query, capability_query])
+    if not vectors:
         return build_inversion_request(pitch)
 
     gather = gather or gather_evidence
-    evidence = await gather(verification_query.strip(), months=months, **gather_kwargs)
-    return build_judgment_request(pitch, verification_query, evidence)
+    evidence = await gather(list(vectors), months=months, **gather_kwargs)
+    return build_judgment_request(pitch, vectors, evidence, catalog=catalog)

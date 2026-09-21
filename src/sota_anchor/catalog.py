@@ -93,8 +93,10 @@ class ModelEntry(BaseModel):
     knowledge_cutoff: str | None = None
     context_length: int | None = None
     prompt_price: float | None = None
+    input_modalities: tuple[str, ...] = ()
     output_modalities: tuple[str, ...] = ()
     supports_tools: bool = False
+    supports_structured_output: bool = False
     is_alias: bool = False
     variants: tuple[str, ...] = ()
 
@@ -304,8 +306,13 @@ def build_catalog(
                 knowledge_cutoff=raw.get("knowledge_cutoff") or None,
                 context_length=raw.get("context_length"),
                 prompt_price=prompt_price,
+                input_modalities=tuple(architecture.get("input_modalities") or ()),
                 output_modalities=tuple(architecture.get("output_modalities") or ()),
                 supports_tools="tools" in (raw.get("supported_parameters") or []),
+                supports_structured_output=bool(
+                    {"structured_outputs", "response_format"}
+                    & set(raw.get("supported_parameters") or [])
+                ),
                 is_alias=parsed.is_alias,
                 variants=tuple(sorted(set(variants))),
             )

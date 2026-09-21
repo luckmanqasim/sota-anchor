@@ -40,6 +40,24 @@ def build_llm() -> LLMClient:
     return LLMClient(resolve_settings())
 
 
+async def _keyless_payload(
+    proposal: str, domain_query: str | None, capability_query: str | None, months: int
+):
+    """Build the host-facing payload, grounding it in the registry when reachable."""
+    try:
+        catalog = await fetch_catalog()
+    except CatalogUnavailable:
+        catalog = None
+    return await build_verification_payload(
+        proposal,
+        domain_query=domain_query,
+        capability_query=capability_query,
+        gather=gather_evidence,
+        catalog=catalog,
+        months=months,
+    )
+
+
 def _force_utf8_output() -> None:
     """Windows consoles default to cp1252; keep output from dying on a code page."""
     for stream in (sys.stdout, sys.stderr):
@@ -131,10 +149,17 @@ def sync(
 @main.command()
 @click.argument("proposal")
 @click.option(
-    "--query",
+    "--domain-query",
     default=None,
-    help="Verification query from the inversion step. Supplying it moves the "
-    "keyless protocol to its second phase: retrieve, then judge.",
+    help="Task keywords in the domain's own vocabulary, from the inversion step. "
+    "Supplying either query moves the keyless protocol to its second phase.",
+)
+@click.option(
+    "--capability-query",
+    default=None,
+    help="Keywords for the broad capability that would make the workaround "
+    "unnecessary. Searched alongside --domain-query, since a narrow query misses "
+    "a general advance indexed under other terminology.",
 )
 @click.option(
     "--months",
@@ -144,7 +169,13 @@ def sync(
     help="Recency window for evidence retrieval.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the full report as JSON.")
-def check(proposal: str, query: str | None, months: int, as_json: bool) -> None:
+def check(
+    proposal: str,
+    domain_query: str | None,
+    capability_query: str | None,
+    months: int,
+    as_json: bool,
+) -> None:
     """Test whether PROPOSAL relies on an obsolete limitation.
 
     With an API key configured this runs the whole pipeline and exits 0 when the
@@ -158,9 +189,7 @@ def check(proposal: str, query: str | None, months: int, as_json: bool) -> None:
         # agent can do this reasoning, so hand it the protocol instead.
         try:
             payload = asyncio.run(
-                build_verification_payload(
-                    proposal, verification_query=query, gather=gather_evidence, months=months
-                )
+                _keyless_payload(proposal, domain_query, capability_query, months)
             )
         except ValueError as bad_input:
             raise click.ClickException(str(bad_input)) from bad_input

@@ -148,7 +148,8 @@ class TestSkill:
 
     def test_body_walks_the_two_phase_protocol(self):
         body = SKILL.read_text(encoding="utf-8")
-        assert "verification_query" in body
+        assert "domain_query" in body
+        assert "capability_query" in body
 
     def test_body_forbids_judging_from_training_data(self):
         body = SKILL.read_text(encoding="utf-8").lower()
@@ -156,7 +157,8 @@ class TestSkill:
 
     def test_body_covers_the_no_evidence_outcome(self):
         body = SKILL.read_text(encoding="utf-8").lower()
-        assert "no evidence" in body or "no recent evidence" in body
+        assert "empty evidence set" in body
+        assert "nothing was checked" in body
 
     def test_body_names_no_specific_domain(self):
         # The engine is domain-agnostic; the skill must not smuggle in a topic list.
@@ -460,3 +462,50 @@ class TestLineEndingResilience:
         attributes = (REPO / ".gitattributes").read_text(encoding="utf-8")
         for shipped in ("session-start", "user-prompt-submit", "run-hook.cmd", "bootstrap-block.md"):
             assert shipped in attributes, shipped
+
+
+class TestSkillToolPriority:
+    """A live run shelled out to `sota-anchor` and got exit 127: the package was
+    in a project .venv, not on PATH. MCP succeeded, but the failure was noise.
+    """
+
+    def _body(self) -> str:
+        return SKILL.read_text(encoding="utf-8")
+
+    def test_names_the_mcp_tool_as_the_primary_path(self):
+        body = self._body()
+        primary = body.index("primary path")
+        assert "verify_architecture" in body[:primary + 200]
+
+    def test_mcp_appears_before_the_cli_fallback(self):
+        body = self._body()
+        assert body.index("verify_architecture(") < body.index("evidence --query")
+
+    def test_labels_the_cli_as_a_fallback(self):
+        assert "Fallback" in self._body()
+
+    def test_fallback_checks_a_project_venv_before_calling(self):
+        body = self._body()
+        assert ".venv/bin/sota-anchor" in body
+        assert ".venv/Scripts/sota-anchor.exe" in body
+
+    def test_fallback_checks_the_system_path_too(self):
+        assert "command -v sota-anchor" in self._body()
+
+    def test_warns_about_the_exact_failure_seen(self):
+        assert "127" in self._body()
+
+    def test_an_unresolvable_cli_is_not_treated_as_evidence(self):
+        body = self._body().lower()
+        assert "not evidence that the limitation holds" in body
+
+    def test_skill_asks_for_both_query_vectors(self):
+        body = self._body()
+        assert "domain_query" in body
+        assert "capability_query" in body
+
+    def test_skill_states_the_default_baseline(self):
+        assert "assumption stands" in self._body().lower()
+
+    def test_skill_carries_no_rhetorical_framing(self):
+        assert "abandon work" not in self._body().lower()

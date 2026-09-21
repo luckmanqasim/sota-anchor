@@ -186,9 +186,10 @@ class TestVerifyArchitecture:
             **kwargs,
         )
 
-    async def test_retrieves_using_the_inverted_verification_query(self):
+    async def test_retrieves_using_the_inverted_query_vectors(self):
         await self._run(FakeLLM(VALID, STILL_VALID), evidence_set("X"))
-        assert self.queried == VALID["verification_query"]
+        assert VALID["domain_query"] in self.queried
+        assert VALID["capability_query"] in self.queried
 
     async def test_runs_both_stages_in_order(self):
         llm = FakeLLM(VALID, STILL_VALID)
@@ -246,3 +247,48 @@ class TestVerifyArchitecture:
             "a proposal", llm=FakeLLM(VALID, STILL_VALID), gather=gather, now=NOW, months=6
         )
         assert captured["months"] == 6
+
+
+class TestKeyedJudgePromptContract:
+    """The headless path states the same objective standard as the host path.
+
+    The previous wording, "an unsupported YES would tell a developer to abandon
+    work they still need", anchored on work projects and pushed asymmetrically
+    toward false negatives.
+    """
+
+    async def _prompt(self) -> str:
+        llm = FakeLLM(STILL_VALID)
+        await judge(INVERSION, evidence_set("PlanSightRAG"), llm=llm)
+        return llm.prompts[0]
+
+    async def test_the_rhetorical_framing_is_gone(self):
+        prompt = (await self._prompt()).lower()
+        assert "abandon work" not in prompt
+        assert "still need" not in prompt
+
+    async def test_states_the_evidence_only_invariant(self):
+        prompt = (await self._prompt()).lower()
+        assert "inadmissible" in prompt or "not admissible" in prompt
+
+    async def test_states_the_default_baseline(self):
+        assert "stands" in (await self._prompt()).lower()
+
+    async def test_requires_documented_supersession(self):
+        prompt = (await self._prompt()).lower()
+        assert "supersede" in prompt or "superseded" in prompt
+
+
+class TestKeyedMultiVector:
+    async def test_both_vectors_reach_retrieval(self):
+        captured: dict[str, object] = {}
+
+        async def gather(queries, **kwargs):
+            captured["queries"] = queries
+            return evidence_set("X")
+
+        await verify_architecture(
+            "a proposal", llm=FakeLLM(VALID, STILL_VALID), gather=gather, now=NOW
+        )
+        assert VALID["domain_query"] in captured["queries"]
+        assert VALID["capability_query"] in captured["queries"]

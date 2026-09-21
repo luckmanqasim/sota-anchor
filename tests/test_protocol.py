@@ -77,14 +77,20 @@ class TestInversionRequest:
         assert "impossible" in rendered
         assert "justified" in rendered
 
-    def test_requests_the_four_inversion_fields(self):
+    def test_requests_the_inversion_fields(self):
         rendered = build_inversion_request(PITCH).render()
-        for field in ("domain", "implicit_limitation", "proposed_workaround", "verification_query"):
+        for field in (
+            "domain",
+            "implicit_limitation",
+            "proposed_workaround",
+            "domain_query",
+            "capability_query",
+        ):
             assert field in rendered
 
-    def test_tells_the_host_to_call_back_with_the_query(self):
+    def test_tells_the_host_to_call_back_with_both_queries(self):
         rendered = build_inversion_request(PITCH).render()
-        assert "verification_query" in rendered
+        assert "both queries" in rendered.lower()
         assert "again" in rendered.lower()
 
     def test_does_not_ask_the_host_to_decide_obsolescence_yet(self):
@@ -139,7 +145,9 @@ class TestJudgmentRequest:
 
     def test_offers_the_not_obsolete_outcome_too(self):
         # A protocol that only describes how to say YES is a protocol for saying YES.
-        assert "still" in self._render("PlanSightRAG").lower()
+        rendered = self._render("PlanSightRAG").lower()
+        assert "otherwise" in rendered
+        assert "assumption stands" in rendered
 
     def test_carries_the_original_pitch_for_context(self):
         assert PITCH in self._render("PlanSightRAG")
@@ -216,7 +224,7 @@ class TestVerificationPayload:
     """The dispatcher the MCP tool and CLI both use."""
 
     async def test_without_a_query_it_asks_for_the_inversion(self):
-        payload = await build_verification_payload(PITCH, verification_query=None)
+        payload = await build_verification_payload(PITCH, domain_query=None)
         assert payload.phase == PHASE_INVERT
 
     async def test_without_a_query_it_retrieves_nothing(self):
@@ -224,23 +232,24 @@ class TestVerificationPayload:
             raise AssertionError("retrieval must wait for the inverted query")
 
         payload = await build_verification_payload(
-            PITCH, verification_query=None, gather=forbidden
+            PITCH, domain_query=None, gather=forbidden
         )
         assert payload.phase == PHASE_INVERT
 
     async def test_with_a_query_it_retrieves_and_asks_for_judgment(self):
-        async def gather(query, **kwargs):
-            assert query == QUERY
+        async def gather(queries, **kwargs):
+            # Retrieval now receives a list of vectors, not a single string.
+            assert QUERY in queries
             return evidence_set("PlanSightRAG")
 
-        payload = await build_verification_payload(PITCH, verification_query=QUERY, gather=gather)
+        payload = await build_verification_payload(PITCH, domain_query=QUERY, gather=gather)
         assert payload.phase == PHASE_JUDGE
 
     async def test_with_a_query_but_no_results_it_refuses(self):
         async def gather(query, **kwargs):
             return EvidenceSet()
 
-        payload = await build_verification_payload(PITCH, verification_query=QUERY, gather=gather)
+        payload = await build_verification_payload(PITCH, domain_query=QUERY, gather=gather)
         assert payload.phase == PHASE_NO_EVIDENCE
 
     async def test_months_is_passed_through_to_retrieval(self):
@@ -251,7 +260,7 @@ class TestVerificationPayload:
             return evidence_set("X")
 
         await build_verification_payload(
-            PITCH, verification_query=QUERY, gather=gather, months=6
+            PITCH, domain_query=QUERY, gather=gather, months=6
         )
         assert captured["months"] == 6
 
@@ -259,6 +268,186 @@ class TestVerificationPayload:
         async def gather(query, **kwargs):
             return EvidenceSet(errors=["arxiv: throttled (HTTP 406)", "github: ConnectError"])
 
-        payload = await build_verification_payload(PITCH, verification_query=QUERY, gather=gather)
+        payload = await build_verification_payload(PITCH, domain_query=QUERY, gather=gather)
         assert payload.phase == PHASE_NO_EVIDENCE
         assert "throttled" in payload.render()
+
+
+class TestBurdenOfProof:
+    """The judging prompt states an objective standard, not a rhetorical one.
+
+    The previous wording, "An unsupported 'yes' tells a developer to abandon
+    work they still need", anchored on work projects, ignored exploratory and
+    research contexts, and pushed asymmetrically toward false negatives.
+    """
+
+    def _render(self) -> str:
+        return build_judgment_request(PITCH, QUERY, evidence_set("PlanSightRAG")).render()
+
+    def test_the_rhetorical_framing_is_gone(self):
+        rendered = self._render().lower()
+        assert "abandon work" not in rendered
+        assert "developer" not in rendered
+
+    def test_does_not_appeal_to_project_risk(self):
+        rendered = self._render().lower()
+        for loaded in ("still need", "waste", "harm", "dangerous"):
+            assert loaded not in rendered
+
+    def test_states_the_evidence_only_invariant(self):
+        rendered = self._render().lower()
+        assert "inadmissible" in rendered or "not admissible" in rendered
+
+    def test_states_the_default_baseline_explicitly(self):
+        rendered = self._render().lower()
+        assert "stands" in rendered
+
+    def test_requires_documented_supersession_to_overturn(self):
+        rendered = self._render().lower()
+        assert "supersede" in rendered or "superseded" in rendered
+
+    def test_names_benchmarked_evidence_as_the_standard(self):
+        assert "benchmark" in self._render().lower()
+
+
+class TestNeutralThreshold:
+    """An absent lookup is not a literature finding.
+
+    The decision is the same either way -- the assumption stands -- but the
+    stated reason must not claim literature was examined when retrieval failed.
+    """
+
+    def test_empty_evidence_does_not_claim_the_literature_was_examined(self):
+        rendered = build_judgment_request(PITCH, QUERY, EvidenceSet()).render().lower()
+        assert "literature shows" not in rendered
+        assert "literature confirms" not in rendered
+
+    def test_empty_evidence_still_leaves_the_assumption_standing(self):
+        rendered = build_judgment_request(PITCH, QUERY, EvidenceSet()).render().lower()
+        assert "stands" in rendered
+
+    def test_empty_evidence_says_nothing_was_checked(self):
+        rendered = build_judgment_request(PITCH, QUERY, EvidenceSet()).render().lower()
+        assert "no recent evidence" in rendered
+
+    def test_retrieved_evidence_distinguishes_itself_from_an_outage(self):
+        # With evidence present, the prompt may speak about what it documents.
+        rendered = build_judgment_request(PITCH, QUERY, evidence_set("X")).render().lower()
+        assert "document" in rendered
+
+    def test_no_moralising_in_the_empty_path_either(self):
+        rendered = build_judgment_request(PITCH, QUERY, EvidenceSet()).render().lower()
+        assert "abandon" not in rendered
+        assert "risk" not in rendered
+
+
+class TestCapabilitySnapshot:
+    """Frontier grounding comes from the live registry, dated and attributed.
+
+    Naming model capabilities in the prompt would be a static dictionary keyed
+    to model names -- it would go stale, which is the failure this tool exists
+    to prevent, and an unsourced capability claim is a prior, which the same
+    prompt declares inadmissible.
+    """
+
+    @pytest.fixture
+    def snapshot(self, raw_models):
+        import datetime as dt
+
+        from sota_anchor.catalog import build_catalog
+        from sota_anchor.protocol import render_capability_snapshot
+
+        from .conftest import NOW
+
+        return render_capability_snapshot(build_catalog(raw_models, now=NOW))
+
+    def test_names_current_endpoints_from_the_registry(self, snapshot):
+        assert "anthropic/claude-opus-5" in snapshot
+
+    def test_dates_itself(self, snapshot):
+        assert "2026-09-19" in snapshot
+
+    def test_attributes_itself_to_the_registry(self, snapshot):
+        assert "openrouter" in snapshot.lower()
+
+    def test_reports_declared_modalities_rather_than_asserted_skills(self, snapshot):
+        lowered = snapshot.lower()
+        assert "text" in lowered
+        # No unverifiable capability claims.
+        for invented in ("svg", "coordinate loop", "natively output"):
+            assert invented not in lowered
+
+    def test_reports_structured_output_and_tool_support(self, snapshot):
+        assert "tool" in snapshot.lower()
+
+    def test_is_ascii_only(self, snapshot):
+        assert snapshot.isascii()
+
+    def test_judgment_prompt_carries_the_snapshot_when_given_one(self, raw_models):
+        from sota_anchor.catalog import build_catalog
+
+        from .conftest import NOW
+
+        request = build_judgment_request(
+            PITCH, QUERY, evidence_set("X"), catalog=build_catalog(raw_models, now=NOW)
+        )
+        assert "anthropic/claude-opus-5" in request.render()
+
+    def test_judgment_prompt_works_without_one(self):
+        assert build_judgment_request(PITCH, QUERY, evidence_set("X")).render()
+
+    def test_snapshot_is_labelled_as_registry_fact_not_as_evidence_of_capability(self, raw_models):
+        from sota_anchor.catalog import build_catalog
+
+        from .conftest import NOW
+
+        rendered = build_judgment_request(
+            PITCH, QUERY, evidence_set("X"), catalog=build_catalog(raw_models, now=NOW)
+        ).render().lower()
+        assert "declare" in rendered or "reports" in rendered
+
+
+class TestMultiVectorInversion:
+    """The inversion produces a ladder of query vectors, not a single string."""
+
+    def test_asks_for_a_domain_query(self):
+        assert "domain_query" in build_inversion_request(PITCH).render()
+
+    def test_asks_for_a_capability_query(self):
+        assert "capability_query" in build_inversion_request(PITCH).render()
+
+    def test_explains_the_difference_between_them(self):
+        rendered = build_inversion_request(PITCH).render().lower()
+        assert "broad" in rendered or "foundational" in rendered
+
+    def test_no_longer_asks_for_a_single_verification_query(self):
+        assert "verification_query" not in build_inversion_request(PITCH).render()
+
+    async def test_both_vectors_reach_retrieval(self):
+        captured: dict[str, object] = {}
+
+        async def gather(queries, **kwargs):
+            captured["queries"] = queries
+            return evidence_set("X")
+
+        await build_verification_payload(
+            PITCH,
+            domain_query="floorplan room polygon segmentation",
+            capability_query="VLM direct vector coordinate extraction",
+            gather=gather,
+        )
+        assert "floorplan room polygon segmentation" in captured["queries"]
+        assert "VLM direct vector coordinate extraction" in captured["queries"]
+
+    async def test_one_vector_alone_is_enough_to_proceed(self):
+        async def gather(queries, **kwargs):
+            return evidence_set("X")
+
+        payload = await build_verification_payload(
+            PITCH, domain_query="floorplan polygons", gather=gather
+        )
+        assert payload.phase == PHASE_JUDGE
+
+    async def test_neither_vector_means_inversion_is_still_pending(self):
+        payload = await build_verification_payload(PITCH)
+        assert payload.phase == PHASE_INVERT

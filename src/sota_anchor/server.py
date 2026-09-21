@@ -41,9 +41,11 @@ VERIFY_DESCRIPTION = (
     "committing to a workaround, a heuristic pipeline or a custom post-processing "
     "stage in any domain. Call it with just the pitch first: it returns an "
     "inversion prompt asking what would have to be impossible for the design to "
-    "be justified. Answer that, then call again with verification_query set, and "
-    "it returns dated evidence plus the protocol for judging against it. Raise "
-    "months if a first pass returns nothing usable."
+    "be justified. Answer that, then call again with domain_query (the task in "
+    "its own vocabulary) and capability_query (the broad capability that would "
+    "make the workaround unnecessary), and it returns dated evidence plus the "
+    "standard for judging against it. Two queries because a narrow one misses a "
+    "general advance indexed elsewhere. Raise months if a pass returns nothing."
 )
 
 
@@ -99,7 +101,8 @@ def build_server(
     @mcp.tool(description=VERIFY_DESCRIPTION)
     async def verify_architecture_tool(
         pitch: str,
-        verification_query: str | None = None,
+        domain_query: str | None = None,
+        capability_query: str | None = None,
         months: int = DEFAULT_WINDOW_MONTHS,
     ) -> str:
         try:
@@ -111,11 +114,19 @@ def build_server(
             llm = None
 
         if llm is None:
+            # The registry snapshot grounds the judge in dated fact about what
+            # current endpoints declare. Its absence is not fatal.
+            try:
+                catalog = await fetch_catalog()
+            except CatalogUnavailable:
+                catalog = None
             try:
                 payload = await build_verification_payload(
                     pitch,
-                    verification_query=verification_query,
+                    domain_query=domain_query,
+                    capability_query=capability_query,
                     gather=gather_evidence,
+                    catalog=catalog,
                     months=months,
                 )
             except ValueError as error:

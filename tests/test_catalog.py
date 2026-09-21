@@ -331,3 +331,36 @@ class TestCapabilityRanking:
     def test_rendered_block_is_ascii_only(self, catalog):
         # The block is printed to consoles that default to cp1252 on Windows.
         assert catalog.render_markdown().isascii()
+
+
+class TestDeclaredCapabilities:
+    """Fields the judging prompt needs to ground itself in registry fact rather
+    than in an asserted, stale claim about what a named model can do.
+    """
+
+    @pytest.fixture
+    def catalog(self, raw_models) -> Catalog:
+        return build_catalog(raw_models, now=NOW)
+
+    def test_records_input_modalities(self, catalog):
+        assert catalog.by_id("anthropic/claude-opus-5").input_modalities == ("text",)
+
+    def test_records_multimodal_input(self, raw_models):
+        models = [
+            *raw_models,
+            or_model("acme/vision-1", ts(2026, 9, 1)),
+        ]
+        models[-1]["architecture"]["input_modalities"] = ["text", "image", "file"]
+        catalog = build_catalog(models, now=NOW)
+        assert catalog.by_id("acme/vision-1").input_modalities == ("text", "image", "file")
+
+    def test_records_structured_output_support(self, catalog):
+        assert catalog.by_id("anthropic/claude-opus-5").supports_structured_output is True
+
+    def test_absent_structured_output_is_false(self, raw_models):
+        catalog = build_catalog(raw_models, now=NOW)
+        assert catalog.by_id("openai/gpt-3.5-turbo-instruct").supports_structured_output is False
+
+    def test_missing_architecture_does_not_crash(self):
+        catalog = build_catalog([{"id": "acme/bare", "created": ts(2026, 9, 1)}], now=NOW)
+        assert catalog.by_id("acme/bare").input_modalities == ()

@@ -54,14 +54,30 @@ class Inversion(BaseModel):
     domain: str
     implicit_limitation: str
     proposed_workaround: str
-    verification_query: str
+    domain_query: str
+    capability_query: str
 
-    @field_validator("domain", "implicit_limitation", "proposed_workaround", "verification_query")
+    @field_validator(
+        "domain",
+        "implicit_limitation",
+        "proposed_workaround",
+        "domain_query",
+        "capability_query",
+    )
     @classmethod
     def _must_not_be_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("must not be blank")
         return value.strip()
+
+    def query_vectors(self) -> list[str]:
+        """Both search vectors, in order of specificity.
+
+        Two rather than one because they fail differently: a narrow domain query
+        misses a general advance indexed under other terminology, and a broad
+        capability query misses work that only names the specific task.
+        """
+        return [self.domain_query, self.capability_query]
 
 
 class Verdict(BaseModel):
@@ -254,12 +270,20 @@ Output valid JSON matching this schema:
   "domain": string,
   "implicit_limitation": string,
   "proposed_workaround": string,
-  "verification_query": string
+  "domain_query": string,
+  "capability_query": string
 }}
 
-The verification_query must be a short keyword search phrase, not a question,
-suitable for searching recent research and repositories for evidence that the
-limitation no longer holds."""
+Both queries must be short keyword search phrases, not questions, suitable for
+searching recent research and repositories.
+
+- domain_query names the specific task in this domain's own vocabulary.
+- capability_query names the broad, foundational capability that would make the
+  workaround unnecessary, in vocabulary the task's own field may not use.
+
+Two queries, not one, because they fail differently. A narrow domain query
+misses a general advance indexed under other terminology; a broad capability
+query misses work that only ever names the specific task."""
 
 
 JUDGE_PROMPT = """You are an Epistemic Conflict Arbiter evaluating technical obsolescence.
@@ -272,9 +296,17 @@ Recent SOTA Evidence (past {months} months):
 Question: Has recent tooling, frontier model capabilities, or open-source
 advances in the past {months} months rendered this limitation/workaround obsolete?
 
-Judge only from the evidence above. If the evidence does not actually
-demonstrate that the limitation has been overcome, answer NO - an unsupported
-YES would tell a developer to abandon work they still need.
+Standard of proof:
+
+1. Evidence-only invariant. Judge from the evidence above and nothing else.
+   Training data is not admissible in either direction: it can neither
+   establish that the limitation has fallen nor that it holds.
+2. Default baseline. The assumption stands unless the evidence explicitly
+   documents that a modern primitive, tool or method has superseded it.
+3. Threshold. Prefer evidence reporting benchmarked or demonstrated results
+   over evidence that merely proposes an approach. Absent, incomplete or
+   unbenchmarked evidence does not meet the threshold, and the assumption
+   stands by rule 2.
 
 If YES, return valid JSON:
 {{
@@ -424,7 +456,7 @@ async def verify_architecture(
 
     inversion = await invert(proposal, llm=llm)
     evidence = await gather(
-        inversion.verification_query, now=now, months=months, **gather_kwargs
+        inversion.query_vectors(), now=now, months=months, **gather_kwargs
     )
     verdict = await judge(inversion, evidence, llm=llm)
     return Report(

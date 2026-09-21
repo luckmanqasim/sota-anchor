@@ -128,7 +128,8 @@ class TestVerifyArchitectureTool:
     async def test_retrieves_using_the_inverted_query(self, wired):
         server, state = wired
         await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
-        assert state["queried"] == VALID["verification_query"]
+        assert VALID["domain_query"] in state["queried"]
+        assert VALID["capability_query"] in state["queried"]
 
     async def test_no_evidence_never_yields_an_obsolescence_claim(self, wired):
         server, state = wired
@@ -177,8 +178,8 @@ class TestTwoPhaseVerifyArchitecture:
         server, _ = keyless
         tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
         properties = (tool.input_schema or {}).get("properties", {})
-        assert "verification_query" in properties
-        assert "verification_query" not in (tool.input_schema or {}).get("required", [])
+        assert "domain_query" in properties
+        assert "domain_query" not in (tool.input_schema or {}).get("required", [])
 
     async def test_without_a_query_it_returns_the_inversion_prompt(self, keyless):
         server, _ = keyless
@@ -194,19 +195,19 @@ class TestTwoPhaseVerifyArchitecture:
         server, state = keyless
         result = await server.call_tool(
             "verify_architecture",
-            {"pitch": "OCR snapping pipeline", "verification_query": "vector polygon extraction"},
+            {"pitch": "OCR snapping pipeline", "domain_query": "vector polygon extraction"},
         )
         body = text_of(result)
         assert "PARADIGM SHIFT" in body
         assert "PlanSightRAG" in body
-        assert state["queried"] == "vector polygon extraction"
+        assert "vector polygon extraction" in state["queried"]
 
     async def test_with_a_query_but_no_evidence_it_refuses_to_invite_a_verdict(self, keyless):
         server, state = keyless
         state["evidence"] = EvidenceSet()
         result = await server.call_tool(
             "verify_architecture",
-            {"pitch": "OCR snapping pipeline", "verification_query": "some query"},
+            {"pitch": "OCR snapping pipeline", "domain_query": "some query"},
         )
         body = text_of(result)
         assert "NO VERDICT POSSIBLE" in body
@@ -266,7 +267,7 @@ class TestWindowParameter:
         server, state = keyless
         await server.call_tool(
             "verify_architecture",
-            {"pitch": "a pitch", "verification_query": "a query", "months": 24},
+            {"pitch": "a pitch", "domain_query": "a query", "months": 24},
         )
         assert state["kwargs"]["months"] == 24
 
@@ -275,6 +276,6 @@ class TestWindowParameter:
 
         server, state = keyless
         await server.call_tool(
-            "verify_architecture", {"pitch": "a pitch", "verification_query": "a query"}
+            "verify_architecture", {"pitch": "a pitch", "domain_query": "a query"}
         )
         assert state["kwargs"]["months"] == DEFAULT_WINDOW_MONTHS

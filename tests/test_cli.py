@@ -161,7 +161,8 @@ class TestCheck:
         from sota_anchor.cli import main
 
         runner.invoke(main, ["check", "Build an OCR snapping pipeline."])
-        assert wired["queried"] == VALID["verification_query"]
+        assert VALID["domain_query"] in wired["queried"]
+        assert VALID["capability_query"] in wired["queried"]
 
     def test_months_option_narrows_the_window(self, runner, wired, project):
         from sota_anchor.cli import main
@@ -268,17 +269,17 @@ class TestKeylessCheck:
         from sota_anchor.cli import main
 
         result = runner.invoke(
-            main, ["check", "a pitch", "--query", "direct vector polygon extraction"]
+            main, ["check", "a pitch", "--domain-query", "direct vector polygon extraction"]
         )
         assert "PARADIGM SHIFT" in result.output
-        assert keyless["queried"] == "direct vector polygon extraction"
+        assert "direct vector polygon extraction" in keyless["queried"]
 
     def test_empty_evidence_refuses_rather_than_inviting_a_verdict(self, runner, keyless, project):
         from sota_anchor.cli import main
         from sota_anchor.retriever import EvidenceSet
 
         keyless["evidence"] = EvidenceSet()
-        result = runner.invoke(main, ["check", "a pitch", "--query", "some query"])
+        result = runner.invoke(main, ["check", "a pitch", "--domain-query", "some query"])
         assert "NO VERDICT POSSIBLE" in result.output
         assert "PARADIGM SHIFT" not in result.output
 

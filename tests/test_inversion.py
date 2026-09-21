@@ -29,7 +29,8 @@ VALID = {
         "post-processing."
     ),
     "proposed_workaround": "OCR bounding boxes and geometric snapping heuristics.",
-    "verification_query": "multimodal VLM direct vector polygon extraction technical drawings",
+    "domain_query": "MEP pipe penetration extraction construction drawings",
+    "capability_query": "multimodal VLM direct vector polygon extraction",
 }
 
 
@@ -64,7 +65,8 @@ class TestInversionPrompt:
     async def test_requests_the_four_field_schema(self):
         llm = FakeLLM(VALID)
         await invert("anything", llm=llm)
-        for field in ("domain", "implicit_limitation", "proposed_workaround", "verification_query"):
+        for field in ("domain", "implicit_limitation", "proposed_workaround",
+                      "domain_query", "capability_query"):
             assert field in llm.prompts[0]
 
     async def test_asks_for_valid_json(self):
@@ -89,12 +91,17 @@ class TestInversionParsing:
         assert isinstance(result, Inversion)
         assert result.domain == VALID["domain"]
 
-    async def test_carries_the_verification_query_for_retrieval(self):
+    async def test_carries_both_query_vectors_for_retrieval(self):
         result = await invert("anything", llm=FakeLLM(VALID))
-        assert result.verification_query == VALID["verification_query"]
+        assert result.domain_query == VALID["domain_query"]
+        assert result.capability_query == VALID["capability_query"]
+
+    async def test_exposes_the_vectors_as_a_list(self):
+        result = await invert("anything", llm=FakeLLM(VALID))
+        assert result.query_vectors() == [VALID["domain_query"], VALID["capability_query"]]
 
     async def test_missing_field_is_an_error_not_a_default(self):
-        broken = {k: v for k, v in VALID.items() if k != "verification_query"}
+        broken = {k: v for k, v in VALID.items() if k != "capability_query"}
         with pytest.raises(ArbiterError):
             await invert("anything", llm=FakeLLM(broken, broken, broken))
 
@@ -104,8 +111,8 @@ class TestInversionParsing:
         assert result.domain == VALID["domain"]
         assert len(llm.prompts) == 2
 
-    async def test_blank_verification_query_is_rejected(self):
-        blank = {**VALID, "verification_query": "   "}
+    async def test_blank_query_is_rejected(self):
+        blank = {**VALID, "domain_query": "   "}
         with pytest.raises(ArbiterError):
             await invert("anything", llm=FakeLLM(blank, blank, blank))
 

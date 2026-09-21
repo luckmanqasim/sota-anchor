@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import tempfile
+import textwrap
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
@@ -142,12 +143,35 @@ def render_seed(
         "",
     ]
     lines += [f"  {model.id}" for model in featured]
+    # Counted from registry fields rather than asserted, so the claim cannot go
+    # stale: an agent designing around "models only read and emit plain text" is
+    # routing around something the registry already contradicts.
+    accepts_images = sum(1 for m in featured if "image" in m.input_modalities)
+    with_tools = sum(1 for m in featured if m.supports_tools)
+    structured = sum(1 for m in featured if m.supports_structured_output)
+    declared = [
+        f"{accepts_images} accept image input" if accepts_images else "",
+        f"{with_tools} support tool calls" if with_tools else "",
+        f"{structured} support structured output" if structured else "",
+    ]
+    declared = [item for item in declared if item]
+
     lines += [
         "",
         "Your training data is older than that list. Where the two disagree, the",
         "list is right, and an identifier you do not recognise means the model is",
         "newer than you are - not that it is wrong.",
         "",
+    ]
+    if declared:
+        summary = (
+            f"The registry reports that of those {len(featured)}, "
+            + ", ".join(declared)
+            + ". Before designing around an assumption that a model can only "
+            "read or emit plain text, check it against that."
+        )
+        lines += [*textwrap.wrap(summary, width=74), ""]
+    lines += [
         "Do NOT write a superseded identifier into code, config, a .env file or a",
         "client default. In particular, do not reach for:",
         "",

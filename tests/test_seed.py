@@ -21,7 +21,7 @@ from sota_anchor.seed import (
     write_seed,
 )
 
-from .conftest import NOW
+from .conftest import NOW, or_model, ts
 
 
 @pytest.fixture
@@ -279,3 +279,39 @@ class TestForbiddenSelection:
     def test_the_recent_entry_still_comes_first(self, catalog):
         forbidden = render_seed(catalog, max_forbidden=12).split("do not reach for:")[1]
         assert forbidden.index("claude-opus-4.8") < forbidden.index("claude-opus-3")
+
+
+class TestDeclaredCapabilityLine:
+    """The session baseline should say what current endpoints accept and emit.
+
+    An agent that believes models only read and emit plain text will design
+    around a limitation the registry already contradicts. The counts are derived
+    from registry fields, never asserted, so the line cannot go stale.
+    """
+
+    @pytest.fixture
+    def catalog(self, raw_models):
+        return build_catalog(raw_models, now=NOW)
+
+    def test_reports_how_many_accept_image_input(self, raw_models):
+        models = [*raw_models, or_model("acme/vision-1", ts(2026, 9, 1), prompt_price="0.00002")]
+        models[-1]["architecture"]["input_modalities"] = ["text", "image"]
+        rendered = render_seed(build_catalog(models, now=NOW), providers=["acme"])
+        assert "image" in rendered.lower()
+
+    def test_reports_tool_support(self, catalog):
+        assert "tool" in render_seed(catalog).lower()
+
+    def test_makes_no_claim_the_registry_does_not_support(self, catalog):
+        rendered = render_seed(catalog).lower()
+        for invented in ("svg", "coordinate loop", "natively output"):
+            assert invented not in rendered
+
+    def test_tells_the_agent_the_text_only_assumption_is_checkable(self, catalog):
+        assert "plain text" in render_seed(catalog).lower()
+
+    def test_still_fits_the_resident_budget(self, catalog):
+        assert len(render_seed(catalog)) < 2600
+
+    def test_is_ascii_only(self, catalog):
+        assert render_seed(catalog).isascii()
