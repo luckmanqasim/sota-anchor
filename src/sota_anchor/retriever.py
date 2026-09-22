@@ -239,12 +239,12 @@ def _asciify(text: str) -> str:
     # Escapes rather than literals: this table exists to match these exact
     # code points, and a literal smart quote in source is easy to mangle.
     folded = (
-        text.replace("—", "-")
-        .replace("–", "-")
-        .replace("‘", "'")
-        .replace("’", "'")
-        .replace("“", '"')
-        .replace("”", '"')
+        text.replace("\u2014", "-")
+        .replace("\u2013", "-")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
     )
     return unicodedata.normalize("NFKD", folded).encode("ascii", "ignore").decode("ascii")
 

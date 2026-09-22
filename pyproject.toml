@@ -64,11 +64,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# These modules flatten smart punctuation to ASCII, so their fold tables must
-# contain the exact code points being replaced. RUF001 calls them ambiguous;
-# here they are the entire point.
-"src/sota_anchor/protocol.py" = ["RUF001"]
-"src/sota_anchor/retriever.py" = ["RUF001"]
-"src/sota_anchor/arbiter.py" = ["RUF001"]
-# Fixtures carry non-ASCII deliberately, to prove the flattening works.
+# Fixtures carry non-ASCII deliberately, to prove the flattening works. (The
+# fold tables in src/ write their code points as \u escapes, so they need no
+# exemption.)
 "tests/*" = ["RUF001"]

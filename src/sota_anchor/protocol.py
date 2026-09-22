@@ -21,6 +21,7 @@ The module is pure. No network, no filesystem, no LLM client.
 
 from __future__ import annotations
 
+import textwrap
 import unicodedata
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -43,12 +44,12 @@ def _asciify(text: str) -> str:
     # Escapes rather than literals: this table exists to match these exact
     # code points, and a literal smart quote in source is easy to mangle.
     folded = (
-        text.replace("—", "-")
-        .replace("–", "-")
-        .replace("‘", "'")
-        .replace("’", "'")
-        .replace("“", '"')
-        .replace("”", '"')
+        text.replace("\u2014", "-")
+        .replace("\u2013", "-")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
     )
     return unicodedata.normalize("NFKD", folded).encode("ascii", "ignore").decode("ascii")
 
@@ -194,14 +195,13 @@ def render_capability_snapshot(catalog: Catalog) -> str:
     if not featured:
         return ""
 
-    lines = [
-        "Registry snapshot, retrieved "
-        f"{catalog.fetched_at.date().isoformat()} from {catalog.source}: the model",
-        "API endpoints served there and the interfaces each declares. It lists",
-        "what can be called over the API; it says nothing about which model is",
-        "running this session.",
-        "",
-    ]
+    intro = (
+        f"Registry snapshot, retrieved {catalog.fetched_at.date().isoformat()} from "
+        f"{catalog.source}: the model API endpoints served there and the interfaces "
+        "each declares. It lists what can be called over the API; it says nothing "
+        "about which model is running this session."
+    )
+    lines = [*textwrap.wrap(intro, width=76), ""]
     for model in featured:
         accepts = "+".join(model.input_modalities) or "unreported"
         emits = "+".join(model.output_modalities) or "unreported"
