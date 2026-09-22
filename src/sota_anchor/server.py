@@ -83,15 +83,20 @@ def build_server(
         SERVER_NAME,
         version=__version__,
         instructions=(
-            "Consult models://active before writing any model identifier, and call "
-            "verify_architecture before committing to a workaround for a claimed "
-            "tool limitation."
+            "models://active lists the model API endpoints a public registry "
+            "currently serves; read it before writing a model identifier into code "
+            "or config. Call verify_architecture before building around something "
+            "assumed to be unavailable - a custom parser or converter for a format "
+            "thought to need vendor tooling, a from-scratch rewrite, or a "
+            "workaround for a model limitation."
         ),
     )
 
     @mcp.resource("models://active", mime_type="application/json")
     async def active_models() -> str:
-        """Current production model endpoints, with superseded ones mapped forward."""
+        """Model API endpoints a public registry currently serves, dated and sourced,
+        with superseded identifiers mapped forward. It lists what can be called; it
+        says nothing about which model is reading it."""
         try:
             catalog = await fetch_catalog()
         except CatalogUnavailable as error:
@@ -154,7 +159,10 @@ def build_server(
         description=VERIFY_DESCRIPTION,
     )
 
-    @mcp.prompt(description="Baseline system prompt: active models plus verification habit.")
+    @mcp.prompt(
+        description="Project baseline: current model API endpoints plus the habit of "
+        "checking assumed limitations."
+    )
     async def init_project() -> str:
         try:
             catalog = await fetch_catalog()
@@ -164,22 +172,24 @@ def build_server(
 
         return "\n".join(
             [
-                "You are working in a project anchored by sota-anchor.",
+                "This project uses sota-anchor, which keeps a dated list of model API",
+                "endpoints and checks designs against recent work.",
                 "",
                 block,
                 "",
                 "## Verifying assumptions",
                 "",
-                "Your training data has a cutoff. Before committing to a workaround,",
-                "a heuristic pipeline, an OCR or parsing stage, or any custom",
-                "post-processing that exists because a tool 'cannot' do something,",
-                "call the `verify_architecture` tool with the design in question.",
-                "It checks the assumption against research and repositories from the",
-                "past 12 months and tells you if a native primitive already replaces",
-                "what you were about to build.",
+                "Training data has a cutoff, and so do assumptions about what exists.",
+                "Before building around something assumed to be unavailable - a custom",
+                "parser or converter for a format thought to need vendor tooling, a",
+                "rewrite of an existing library from scratch, an OCR or heuristic stage",
+                "around a model limitation - call the `verify_architecture` tool with",
+                "the design in question. It searches recent papers, repositories and",
+                "package registries, and reports whether an existing solution already",
+                "replaces what was about to be built.",
                 "",
-                "Read the `models://active` resource before writing any model",
-                "identifier into code, config or a .env file.",
+                "Read the `models://active` resource before writing a model identifier",
+                "into code, config or a .env file.",
             ]
         )
 

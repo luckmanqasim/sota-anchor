@@ -355,7 +355,7 @@ class TestSeedCommand:
 
         result = runner.invoke(main, ["seed"])
         assert result.exit_code == 0, result.output
-        assert "SOTA ANCHOR" in result.output
+        assert "sota-anchor plugin" in result.output
 
     def test_refresh_writes_the_cached_block(self, runner, wired, project, tmp_path, monkeypatch):
         from sota_anchor import cli as module

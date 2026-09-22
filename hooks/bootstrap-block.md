@@ -1,13 +1,13 @@
-[SOTA ANCHOR]
+sota-anchor plugin: no model registry snapshot yet
 
-No model catalog has been fetched yet, so the current frontier lineup is not
-available in this session.
+No registry snapshot has been fetched, so this session has no current list
+of model API endpoints. Model identifiers recalled from training data may
+have been superseded since. When code or config needs one, ask the user
+which endpoint to use, or run /sota-sync to fetch the current list.
 
-Your training data has a cutoff, and model identifiers you remember are likely
-to be superseded. Do not write a model identifier into code, config or a .env
-file from memory. Ask which endpoint to use, or run `/sota-sync` to fetch the
-live catalog.
-
-Before building a workaround for something a tool "cannot" do, run
-`/sota-check "<your design>"` - the limitation may have been removed since your
-training cutoff.
+Before building around something assumed to be unavailable - a custom parser
+or converter for a format thought to need vendor tooling, a rewrite of an
+existing library from scratch, an OCR or heuristic stage around a model
+limitation - run `/sota-check "<the design>"` or the verify_architecture MCP
+tool. It searches recent papers, repositories and package registries for an
+existing solution first.

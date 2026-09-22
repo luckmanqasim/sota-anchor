@@ -1,8 +1,10 @@
 """The SessionStart context block.
 
 This text is resident in every session the plugin touches, so it has two
-competing obligations: be forceful enough to override a confident prior, and be
-small enough that nobody minds paying for it.
+competing obligations: be specific enough to displace a confident prior -- the
+exact superseded identifiers, not "use current models" -- and be small enough
+that nobody minds paying for it. How it reads to the host model, which must be
+as sourced reference data rather than as an order, is pinned in test_framing.
 """
 
 from __future__ import annotations
@@ -22,6 +24,15 @@ from sota_anchor.seed import (
 )
 
 from .conftest import NOW, or_model, ts
+
+#: Opens the superseded list. Everything after it in the block is that list and
+#: the closing prose, which holds no model identifiers.
+SUPERSEDED_MARKER = "Superseded identifiers"
+
+
+def flat(text: str) -> str:
+    """Collapse wrapping, so assertions test wording rather than line breaks."""
+    return " ".join(text.split())
 
 
 @pytest.fixture
@@ -44,13 +55,19 @@ class TestRenderSeed:
         assert "anthropic/claude-opus-4.8" in rendered
         assert "openai/gpt-4o" in rendered
 
-    def test_states_the_directive_not_merely_the_data(self, catalog):
-        rendered = render_seed(catalog).lower()
-        assert "do not" in rendered
+    def test_says_what_to_prefer_not_merely_the_data(self, catalog):
+        assert "prefer a current endpoint" in flat(render_seed(catalog)).lower()
 
-    def test_tells_the_agent_its_priors_are_the_stale_part(self, catalog):
+    def test_says_the_list_can_postdate_training_data(self, catalog):
         rendered = render_seed(catalog).lower()
-        assert "training" in rendered
+        assert "training data" in rendered
+
+    def test_points_at_workarounds_beyond_model_limits(self, catalog):
+        # The refusing session decided the check was only about model
+        # capabilities, so a custom parser for a vendor format never qualified.
+        rendered = render_seed(catalog).lower()
+        assert "parser" in rendered
+        assert "vendor" in rendered
 
     def test_points_at_the_verification_command(self, catalog):
         assert "/sota-check" in render_seed(catalog)
@@ -82,6 +99,37 @@ class TestRenderSeed:
         assert "google/" not in rendered
 
 
+class TestDegenerateCatalogs:
+    """Shapes the fixture data exposed: one endpoint, and nothing superseded.
+
+    The block that reached a live session read "of those 1, 1 support tool
+    calls" and ended a sentence with "do not reach for:" over an empty list.
+    """
+
+    @pytest.fixture
+    def single(self, raw_models):
+        return render_seed(build_catalog(raw_models, now=NOW), providers=["slowcorp"])
+
+    def test_one_endpoint_reads_as_one(self, single):
+        assert "of those 1" not in single
+        assert "of these 1" not in single
+
+    def test_no_superseded_heading_without_entries(self, single):
+        assert "superseded" not in single.lower()
+
+    def test_no_line_introduces_an_empty_list(self, single):
+        lines = single.splitlines()
+        for index, line in enumerate(lines):
+            if line.rstrip().endswith(":"):
+                following = [text for text in lines[index + 1 :] if text.strip()]
+                assert following and following[0].startswith("  "), line
+
+    def test_an_empty_catalog_says_it_has_no_endpoints(self):
+        rendered = render_seed(build_catalog([], now=NOW))
+        assert "no endpoints" in rendered.lower()
+        assert "2026-09-19" in rendered
+
+
 class TestBootstrapBlock:
     def test_is_used_when_no_catalog_has_ever_been_fetched(self):
         assert BOOTSTRAP_BLOCK.strip()
@@ -99,6 +147,16 @@ class TestBootstrapBlock:
 
     def test_is_ascii_only(self):
         assert BOOTSTRAP_BLOCK.isascii()
+
+    def test_matches_the_file_the_hook_ships(self):
+        # The hook cats the file; tests read the constant. Two copies drift.
+        from pathlib import Path
+
+        shipped = Path(__file__).resolve().parent.parent / "hooks" / "bootstrap-block.md"
+        assert shipped.read_text(encoding="utf-8").strip() == BOOTSTRAP_BLOCK.strip()
+
+    def test_points_at_workarounds_beyond_model_limits(self):
+        assert "parser" in BOOTSTRAP_BLOCK.lower()
 
 
 class TestSeedFile:
@@ -200,7 +258,7 @@ class TestForbiddenSelection:
         rendered = render_seed(catalog, max_forbidden=3)
         forbidden = [
             line.strip()
-            for line in rendered.split("do not reach for:")[1].splitlines()
+            for line in rendered.split(SUPERSEDED_MARKER)[1].splitlines()
             if line.startswith("  ") and "/" in line
         ]
         assert len({entry.split("/")[0] for entry in forbidden}) == 3
@@ -230,7 +288,7 @@ class TestForbiddenSelection:
         rendered = render_seed(catalog, max_forbidden=12)
         forbidden = [
             line.strip()
-            for line in rendered.split("do not reach for:")[1].splitlines()
+            for line in rendered.split(SUPERSEDED_MARKER)[1].splitlines()
             if line.startswith("  ") and "/" in line
         ]
         assert len(forbidden) == len(set(forbidden))
@@ -241,14 +299,14 @@ class TestForbiddenSelection:
         rendered = render_seed(catalog, max_forbidden=2)
         forbidden = [
             line.strip()
-            for line in rendered.split("do not reach for:")[1].splitlines()
+            for line in rendered.split(SUPERSEDED_MARKER)[1].splitlines()
             if line.startswith("  ") and "/" in line
         ]
         assert len(forbidden) == 2
 
     def test_never_forbids_something_it_also_recommends(self, catalog):
         rendered = render_seed(catalog)
-        _active, forbidden = rendered.split("do not reach for:")
+        _active, forbidden = rendered.split(SUPERSEDED_MARKER)
         for model in catalog.featured():
             assert model.id not in forbidden
 
@@ -259,12 +317,12 @@ class TestForbiddenSelection:
         stale identifier for an older-cutoff model to emit.
         """
         rendered = render_seed(catalog, max_per_provider=1, max_forbidden=12)
-        assert "openai/gpt-6-astra" in rendered.split("do not reach for:")[0]
-        assert "openai/gpt-4o" in rendered.split("do not reach for:")[1]
+        assert "openai/gpt-6-astra" in rendered.split(SUPERSEDED_MARKER)[0]
+        assert "openai/gpt-4o" in rendered.split(SUPERSEDED_MARKER)[1]
 
     def test_includes_retired_models_too(self, catalog):
         rendered = render_seed(catalog, max_forbidden=12)
-        assert "openai/gpt-5.4-mini" in rendered.split("do not reach for:")[1]
+        assert "openai/gpt-5.4-mini" in rendered.split(SUPERSEDED_MARKER)[1]
 
     def test_names_both_a_recent_and_a_training_era_entry_of_a_live_family(self, catalog):
         """One slot per lineage let the newest supersession shadow the famous one.
@@ -274,12 +332,12 @@ class TestForbiddenSelection:
         because it is what an older-cutoff model emits.
         """
         rendered = render_seed(catalog, max_forbidden=12)
-        forbidden = rendered.split("do not reach for:")[1]
+        forbidden = rendered.split(SUPERSEDED_MARKER)[1]
         assert "anthropic/claude-opus-4.8" in forbidden
         assert "anthropic/claude-opus-3" in forbidden
 
     def test_the_recent_entry_still_comes_first(self, catalog):
-        forbidden = render_seed(catalog, max_forbidden=12).split("do not reach for:")[1]
+        forbidden = render_seed(catalog, max_forbidden=12).split(SUPERSEDED_MARKER)[1]
         assert forbidden.index("claude-opus-4.8") < forbidden.index("claude-opus-3")
 
 

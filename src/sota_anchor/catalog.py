@@ -194,15 +194,18 @@ class Catalog(BaseModel):
         retired = self.legacy_map(providers, max_per_provider)
         fetched = self.fetched_at.date().isoformat()
 
+        # Sourced and scoped rather than asserted. "When it disagrees with the
+        # table, the table is right" read to a host model as an order to override
+        # its own knowledge; see seed.py for the refusal that caused.
         lines = [
-            "## Active model endpoints",
+            "## Current model API endpoints",
             "",
             f"Retrieved from {self.source} on {fetched}"
-            + (" (cached copy; refresh failed)" if self.stale else "")
-            + ".",
-            "",
-            "Your training data is older than this table. When it disagrees with",
-            "the table, the table is right.",
+            + (" (a cached copy; the last refresh failed)" if self.stale else "")
+            + ". These are the model API endpoints that registry serves, for use",
+            "when code or config needs a model identifier. The table says nothing",
+            "about which model is running a session, and can include models",
+            "released after a model's training data was collected.",
             "",
             "| Endpoint | Version | Context | Knowledge cutoff |",
             "| --- | --- | --- | --- |",
@@ -217,21 +220,22 @@ class Catalog(BaseModel):
         if retired:
             lines += [
                 "",
-                "### Superseded - do not scaffold these",
+                "### Superseded endpoints",
                 "",
-                "| Retired endpoint | Use instead |",
+                "| Superseded endpoint | Use instead |",
                 "| --- | --- |",
             ]
             lines += [f"| `{old}` | `{new}` |" for old, new in retired.items()]
 
         lines += [
             "",
-            "### Rules",
+            "### Using this table",
             "",
             "1. When writing a `.env`, API client, config default or model constant,",
-            "   use an endpoint from the active table above. Never a superseded one.",
-            "2. Do not \"correct\" an endpoint above to a name you recognise from",
-            "   training. An unfamiliar name means the model is newer than you are.",
+            "   use an endpoint from the table above rather than a superseded one.",
+            "2. Every endpoint in the table was served on the retrieval date, so an",
+            "   unfamiliar one is a recent release rather than a typo. Keep it as",
+            "   written instead of replacing it with an older name.",
             "3. If a task needs an endpoint not listed here, say so rather than",
             "   guessing an identifier.",
         ]

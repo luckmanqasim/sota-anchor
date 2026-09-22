@@ -20,7 +20,7 @@ MANAGED_NOTICE = (
 )
 
 MDC_FRONTMATTER = {
-    "description": "Active model endpoints and obsolescence guardrails",
+    "description": "Current model API endpoints and checks for assumed limitations",
     "alwaysApply": True,
 }
 

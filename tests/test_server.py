@@ -77,6 +77,39 @@ class TestModelsResource:
         assert "google/lyria-3-clip-preview" not in [m["id"] for m in payload["current"]]
 
 
+class TestServerFraming:
+    """The server's own words reach the host too: as MCP instructions at connect
+    time, as resource descriptions, and as the init_project prompt. The same
+    rule as the session block applies (see test_framing)."""
+
+    @staticmethod
+    def _assert_neutral(text: str) -> None:
+        import re
+
+        from .test_framing import AMBIGUOUS_PATTERNS, OVERRIDE_PATTERNS
+
+        for pattern in OVERRIDE_PATTERNS + AMBIGUOUS_PATTERNS:
+            assert not re.search(pattern, text, re.IGNORECASE), pattern
+
+    async def test_instructions_claim_no_authority(self, server):
+        self._assert_neutral(server.instructions or "")
+
+    async def test_resource_description_claims_no_authority(self, server):
+        resource = next(r for r in await server.list_resources() if str(r.uri) == "models://active")
+        self._assert_neutral(resource.description or "")
+
+    async def test_resource_description_is_scoped_to_callable_endpoints(self, server):
+        resource = next(r for r in await server.list_resources() if str(r.uri) == "models://active")
+        assert "api" in (resource.description or "").lower()
+
+    async def test_init_prompt_claims_no_authority(self, server):
+        result = await server.get_prompt("init_project")
+        self._assert_neutral("\n".join(getattr(m.content, "text", "") for m in result.messages))
+
+    async def test_instructions_reach_beyond_model_limits(self, server):
+        assert "parser" in (server.instructions or "").lower()
+
+
 class TestInitProjectPrompt:
     async def test_carries_the_active_catalog(self, server):
         result = await server.get_prompt("init_project")

@@ -393,14 +393,17 @@ class TestHookExecution:
         assert "\n" in context
         assert "]nn" not in context
 
-    def test_quotes_in_the_block_survive(self, tmp_path):
-        # The bootstrap text contains "cannot" in quotes; a broken escape breaks JSON.
+    def test_the_shipped_bootstrap_survives_intact(self, tmp_path):
+        # It carries double quotes and backticks; a broken escape breaks the
+        # JSON, and a lossy one changes the text. Compare the whole thing.
         result = self._run(
             "session-start",
             env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path / "absent"), "CLAUDE_PLUGIN_ROOT": str(REPO)},
         )
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert '"cannot"' in context
+        shipped = (self.HOOKS / "bootstrap-block.md").read_text(encoding="utf-8")
+        assert '"' in shipped
+        assert context == shipped.rstrip("\n")
 
     def test_the_cached_block_is_what_gets_injected(self, tmp_path):
         from sota_anchor.seed import SEED_FILENAME, write_seed

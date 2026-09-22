@@ -176,8 +176,10 @@ def render_capability_snapshot(catalog: Catalog) -> str:
 
     lines = [
         "Registry snapshot, retrieved "
-        f"{catalog.fetched_at.date().isoformat()} from {catalog.source}.",
-        "These endpoints are current, and the registry reports that they declare:",
+        f"{catalog.fetched_at.date().isoformat()} from {catalog.source}: the model",
+        "API endpoints served there and the interfaces each declares. It lists",
+        "what can be called over the API; it says nothing about which model is",
+        "running this session.",
         "",
     ]
     for model in featured:
