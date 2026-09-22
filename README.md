@@ -3,9 +3,10 @@
 Coding agents carry two kinds of stale knowledge. One is trivia: they write
 `gpt-4o` into your `.env` because that was current when they were trained. The
 other is expensive: they build a workaround for a limitation that no longer
-exists — an OCR-and-snapping pipeline, a regex parser, a hand-rolled retry
-scheduler — because as far as their weights are concerned, the thing they are
-working around is still hard.
+exists — an OCR-and-snapping pipeline, a hand-rolled retry scheduler, a binary
+parser written from scratch for a file format they believe only a vendor SDK
+can read — because as far as their weights are concerned, the thing they are
+working around is still hard, or still missing.
 
 `sota-anchor` attacks both, and it does it **without a list of topics**. There is
 no keyword table, no domain dictionary, and no hardcoded model roster anywhere in
@@ -22,7 +23,7 @@ managed block into `CLAUDE.md`, `.cursorrules`, `.cursor/rules/sota.mdc` or
 forward:
 
 ```
-| Retired endpoint            | Use instead                 |
+| Superseded endpoint         | Use instead                 |
 | --- | --- |
 | `anthropic/claude-opus-4.8` | `anthropic/claude-opus-5`    |
 | `google/gemini-3.7-flash`   | `google/gemini-3.8-flash`    |
@@ -39,15 +40,22 @@ window, or when the registry has expired it.
 
 **Channel 2 — capability anchoring.** A three-stage pipeline:
 
-1. **Invert.** Given a proposal, work out what would have to be hard, impossible
-   or inaccurate for that design to be justified. The output is a falsifiable
-   claim plus a search query — reasoned about, not looked up in a table.
-2. **Differ.** Query arXiv and GitHub for work from the past 6–12 months, using
-   *two* vectors: the task in its own vocabulary, and the broad capability that
-   would make the workaround unnecessary. A narrow query misses a general
-   advance indexed under other terminology; a broad one misses work that only
-   names the specific task. This is the deterministic part, and the part the
-   plugin does.
+1. **Invert.** Given a proposal, work out what would have to be unavailable,
+   impossible or impractical for that design to be justified. Often that is
+   not a model limit at all: no reader exists for a format, only a vendor SDK
+   can open it, an API does not expose the data. A constraint the user states
+   ("I can't use the vendor SDK") is kept as given; what gets checked is the
+   assumption underneath it, that nothing else meets that constraint. The
+   output is a falsifiable claim plus search queries — reasoned about, not
+   looked up in a table.
+2. **Differ.** Search work from the past 6–12 months — papers on arXiv and
+   Hugging Face, repositories on GitHub, packages on npm and crates.io, and the
+   web if a Brave key is set — using *two* vectors: the task in its own
+   vocabulary, and whatever would make the workaround unnecessary (an existing
+   implementation, library, tool or model capability). A narrow query misses a
+   general advance indexed under other terminology; a broad one misses work
+   that only names the specific task. This is the deterministic part, and the
+   part the plugin does.
 3. **Judge.** Decide whether the evidence has retired the claim. If it has, the
    answer comes back as an assertion, its reason, and the link between them:
 
@@ -79,11 +87,15 @@ install` first.
 
 What you get:
 
-- **A `SessionStart` hook** that injects the current frontier lineup and the
-  superseded identifiers not to reach for — into *every* session, including one
-  started in an empty directory where there is no `CLAUDE.md` to read. Costs
-  ~160 ms, because it reads a block rendered ahead of time rather than starting
-  an interpreter or touching the network.
+- **A `SessionStart` hook** that adds a dated snapshot of the model API
+  endpoints the registry serves, and the superseded identifiers to prefer them
+  over — into *every* session, including one started in an empty directory
+  where there is no `CLAUDE.md` to read. Costs ~160 ms, because it reads a
+  block rendered ahead of time rather than starting an interpreter or touching
+  the network. The block names its source and says what it is for; it makes no
+  claim about which model is running and no claim to outrank the model's own
+  knowledge. An earlier wording did both, and a host model rightly refused it as
+  a prompt injection.
 - **A `sota-architect` skill** that runs the verification protocol.
 - **`/sota-check <design>`** and **`/sota-sync`** slash commands.
 - **An MCP server** exposing `models://active` and `verify_architecture`.
@@ -95,9 +107,11 @@ What you get:
 ### Zero-key verification
 
 `verify_architecture` is two-phase. Call it with a pitch and it returns an
-*inversion prompt*: what would have to be impossible for this design to be
-justified? Answer that, call again with the `verification_query` you produced,
-and it returns dated, cited evidence plus the protocol for judging against it.
+*inversion prompt*: what would have to be unavailable for this design to be
+justified? Answer that, call again with the `domain_query` and
+`capability_query` you produced — each led by its most specific term, since
+retrieval relaxes a query by dropping its last terms first — and it returns
+dated, cited evidence plus the protocol for judging against it.
 
 The judging is done by the session you are already in, so there is no second
 model and no second bill. Which puts a lot of weight on one rule, stated in the
@@ -148,10 +162,10 @@ read "nobody judged this" as "this is fine".
 ## Configuration
 
 Nothing here needs an API key. `sync`, `seed` and `evidence` never did — the
-registry and both evidence sources are public — and `check` and
-`verify_architecture` now fall back to the host-driven protocol instead of
-failing. A key is only for a **headless** verdict, where no agent is present to
-answer the protocol:
+registry and every default evidence source are public — and `check` and
+`verify_architecture` fall back to the host-driven protocol instead of failing.
+A key is only for a **headless** verdict, where no agent is present to answer
+the protocol:
 
 | Variable | Purpose |
 | --- | --- |
@@ -160,10 +174,19 @@ answer the protocol:
 | `SOTA_ANCHOR_MODEL` | Optional. Unset, it is resolved from the live catalog. |
 | `OPENROUTER_API_KEY` | Fallback; preferred over `OPENAI_API_KEY`. |
 | `OPENAI_API_KEY` | Fallback. |
-| `GITHUB_TOKEN` | Optional, raises GitHub search rate limits. |
 
 An unset `SOTA_ANCHOR_MODEL` is resolved from the catalog at runtime: the model
 that arbitrates obsolescence should not itself be a stale constant.
+
+Retrieval and the plugin read these, all optional:
+
+| Variable | Purpose |
+| --- | --- |
+| `BRAVE_API_KEY` | Adds general web search as an evidence source. Unset, the web is simply not queried. |
+| `GITHUB_TOKEN` / `GH_TOKEN` | Raises GitHub's unauthenticated limit of ten searches a minute. |
+| `SOTA_ANCHOR_CACHE_DIR` | Where the catalog and session block live. Default `~/.cache/sota-anchor`. The hook and the CLI both honour it. |
+| `SOTA_ANCHOR_TTL_MINUTES` | How old the session block may get before the hook refreshes it. Default 1440. |
+| `SOTA_ANCHOR_PROMPT_HOOK` | `1` switches on the prompt-time nudge. |
 
 ## MCP setup outside the plugin
 
@@ -182,16 +205,20 @@ something else:
 ```
 
 Exposes a resource `models://active` (current endpoints and the superseded map,
-as JSON), a tool `verify_architecture(pitch, verification_query?, months?)`, and
-a prompt `init_project`.
+as JSON), a tool `verify_architecture(pitch, domain_query?, capability_query?,
+months?)`, and a prompt `init_project`.
 
 The judging payload states an objective standard rather than a rhetorical one:
 retrieved evidence only, with training data inadmissible in either direction;
-the assumption stands unless evidence documents supersession; and benchmarked
-results preferred over proposed approaches. Frontier grounding comes from a
-dated registry snapshot of what current endpoints *declare* they accept and
-emit — an interface reading, never a performance claim, and never a hardcoded
-list of model capabilities that would itself go stale.
+the assumption stands unless evidence documents supersession; and a threshold
+that depends on the kind of claim. "No reader exists for this format" is an
+*existence* claim, refuted by a published repository or package that does the
+job, reported with its age and activity because existence is not maturity.
+"Models cannot do this accurately" is a *performance* claim, and needs
+benchmarked results. Frontier grounding comes from a dated registry snapshot of
+what current endpoints *declare* they accept and emit — an interface reading,
+never a performance claim, and never a hardcoded list of model capabilities that
+would itself go stale.
 
 ---
 
@@ -212,27 +239,47 @@ newest arXiv papers about *anything* — robot manipulation, image generation, P
 surrogates. The arbiter would have judged every proposal against unrelated noise
 while appearing to work. AND-joining the same terms returned exactly one paper,
 and it was the one that actually bore on the question. Since AND can
-over-constrain, both sources walk a ladder from strict to loose and stop at the
-first rung that returns anything.
+over-constrain, every source walks a ladder from strict to loose, dropping the
+*last-written* term at each rung and stopping at the first rung that returns
+something relevant. Term order is the query author's, not word length: length
+dropped short identifiers first, and `nwd reader` finds an independent NWD
+reader on GitHub where `navisworks reader parser` finds nothing. Because
+semantic and fuzzy search never return empty, a result must also mention two of
+its query's terms to count as evidence.
 
 ## Known limitations
 
 - **arXiv is fussy about its client.** Its edge answers httpx with `406` where
   it answers curl and urllib with `200`; the discriminator was never isolated
   despite varying headers, encoding, HTTP version and keep-alive. A refused
-  request therefore retries through urllib, which works. Requests are spaced
-  3.5s apart and kept off reused connections, per its Terms of Use. If both
-  paths fail the run reports `arxiv: throttled ... skipped for this run` and
-  proceeds on GitHub alone — check the reported errors before reading a
-  "not obsolete" verdict as reassurance.
+  request therefore goes straight to urllib, which works — backing off first
+  cost 45 seconds of a 55-second retrieval for nothing. Requests are spaced 3.5s
+  apart and kept off reused connections, per its Terms of Use. If both paths
+  fail the run reports `arxiv: throttled ... skipped for this run` and proceeds
+  on the other sources — check the reported errors before reading a "not
+  obsolete" verdict as reassurance.
+- **PyPI is not searched.** It has no search API, and its search page answers
+  clients with a JavaScript challenge. Python packages are usually still found
+  through their GitHub repositories.
+- **Relevance is lexical.** The two-term floor keeps out a project that merely
+  shares an acronym, but not one that shares generic words: a "multimodal RAG
+  with vector search" repository passes for "multimodal vector coordinate
+  extraction". The judge sees every description and the standard of proof
+  rules off-target evidence out, but expect some noise in the evidence list.
+- **Retrieval is bounded in time.** All sources share a 60-second deadline and at
+  most four requests in flight. A source still running at the deadline is cut
+  off, keeps what it found, and says so in the errors.
 - **Verdict quality is bounded by the evidence.** A paper's existence is not
-  proof that a production-ready primitive exists. Treat an obsolescence verdict
-  as a prompt to go look, not as a decision.
+  proof that a production-ready primitive exists, and a repository's is not
+  proof that it works. Treat an obsolescence verdict as a prompt to go look, not
+  as a decision.
 - **The registry occasionally exposes near-duplicate variants** (for example both
   `gemini-3.1-pro-preview` and `gemini-3.1-pro-preview-customtools`), and each
   consumes a slot in the block. Both are genuinely current; it is cosmetic noise.
 - **The plugin needs `uv` (or the CLI on `PATH`).** Retrieval is Python; it
-  cannot be done from bash. Without either, the `SessionStart` hook still injects
+  cannot be done from bash. The hook refreshes its block with `uv run --project`
+  against the plugin's own checkout, which leaves your project directory
+  untouched. Without `uv` or the CLI, the `SessionStart` hook still injects
   whatever block is cached and then degrades silently, but the MCP server will
   report as failed to connect.
 - **The session block can be a day stale.** The hook never blocks on the network:
@@ -258,13 +305,16 @@ cited as showing it.
 
 ```bash
 uv pip install -e ".[dev]"
-python -m pytest            # 480 tests, all offline
+python -m pytest            # all offline
 ```
 
-The suite never touches the network: HTTP is served through
-`httpx.MockTransport` and the LLM through an injected fake, so it needs no
-API keys and cannot be flaked by a third-party service. `ruff check .` is
-clean and both run in CI on Linux and Windows.
+The suite never touches the network or your own cache. HTTP is served through
+`httpx.MockTransport` and the LLM through an injected fake. Every test gets a
+private cache directory, a real DNS lookup fails the test, and the hook tests
+put fake refresh tools first on `PATH`. Those guards exist because both leaks
+happened: tests once wrote fixture models into the real session block, which
+the plugin then injected into live sessions. `ruff check .` is clean and both
+run in CI on Linux and Windows.
 
 ## License
 
