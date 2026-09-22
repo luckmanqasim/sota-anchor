@@ -3,10 +3,42 @@
 from __future__ import annotations
 
 import datetime as dt
+import socket
 
 import pytest
 
 NOW = dt.datetime(2026, 9, 19, tzinfo=dt.UTC)
+
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache_dir(tmp_path_factory, monkeypatch):
+    """Give every test its own cache directory.
+
+    Without this, the `sync` tests wrote fixture data into the developer's real
+    ~/.cache/sota-anchor/session-block.md, and the plugin injected
+    `slowcorp/steady-1` into live sessions as the current model lineup.
+    """
+    monkeypatch.setenv("SOTA_ANCHOR_CACHE_DIR", str(tmp_path_factory.mktemp("cache")))
+
+
+@pytest.fixture(autouse=True)
+def no_real_network(monkeypatch):
+    """Fail any lookup of a real host, so "offline" is enforced, not assumed.
+
+    Name resolution is where every real request starts -- httpx, urllib and
+    asyncio all resolve through ``socket.getaddrinfo`` -- while loopback stays
+    open because asyncio's own plumbing uses it on Windows.
+    """
+    real_getaddrinfo = socket.getaddrinfo
+
+    def guarded(host, *args, **kwargs):
+        if host is None or host in LOOPBACK:
+            return real_getaddrinfo(host, *args, **kwargs)
+        raise RuntimeError(f"test attempted real network access: lookup of {host!r}")
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded)
 
 
 def ts(year: int, month: int, day: int) -> int:

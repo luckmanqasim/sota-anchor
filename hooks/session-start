@@ -11,18 +11,25 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CACHE_DIR="${SOTA_ANCHOR_CACHE_DIR:-${HOME}/.cache/sota-anchor}"
 BLOCK="${CACHE_DIR}/session-block.md"
 TTL_MINUTES="${SOTA_ANCHOR_TTL_MINUTES:-1440}"
 
 # Refresh out of band. The user never waits for the network: this session uses
 # whatever is cached, and the next one is current.
+#
+# The plugin's own checkout comes first, through `uv run --project`: it is the
+# code this hook ships with, and --project leaves the working directory alone.
+# That directory is the user's project. A bare `uv run` resolved against it,
+# found no sota-anchor there, and in a project with a pyproject.toml created a
+# .venv and a uv.lock the user never asked for.
 refresh_detached() {
     local -a runner
-    if command -v sota-anchor >/dev/null 2>&1; then
+    if command -v uv >/dev/null 2>&1; then
+        runner=(uv run --quiet --project "$PLUGIN_ROOT" sota-anchor seed --refresh)
+    elif command -v sota-anchor >/dev/null 2>&1; then
         runner=(sota-anchor seed --refresh)
-    elif command -v uv >/dev/null 2>&1; then
-        runner=(uv run --quiet sota-anchor seed --refresh)
     elif command -v python >/dev/null 2>&1; then
         runner=(python -m sota_anchor.cli seed --refresh)
     elif command -v python3 >/dev/null 2>&1; then
@@ -32,7 +39,13 @@ refresh_detached() {
     else
         return 0
     fi
-    ( "${runner[@]}" >/dev/null 2>&1 & ) >/dev/null 2>&1 || true
+    # Hand over the directory this hook reads, so the refresh cannot write
+    # anywhere else. Left to itself, bash resolves the default from HOME while
+    # Python on Windows resolves it from USERPROFILE.
+    (
+        export SOTA_ANCHOR_CACHE_DIR="$CACHE_DIR"
+        "${runner[@]}" >/dev/null 2>&1 &
+    ) >/dev/null 2>&1 || true
 }
 
 is_fresh() {

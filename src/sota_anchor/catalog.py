@@ -42,8 +42,21 @@ class CatalogUnavailable(RuntimeError):
     """Raised when the registry is unreachable and no cache exists to fall back on."""
 
 
+#: Overrides the cache directory. The SessionStart hook reads the same variable,
+#: and hands the directory it resolved to the refresh it spawns, so the two sides
+#: cannot disagree about where the session block lives.
+CACHE_DIR_ENV = "SOTA_ANCHOR_CACHE_DIR"
+
+
+def default_cache_dir() -> Path:
+    override = os.environ.get(CACHE_DIR_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".cache" / "sota-anchor"
+
+
 def default_cache_path() -> Path:
-    return Path.home() / ".cache" / "sota-anchor" / "catalog.json"
+    return default_cache_dir() / "catalog.json"
 
 
 class ParsedId(BaseModel):

@@ -103,8 +103,10 @@ class TestBootstrapBlock:
 
 class TestSeedFile:
     def test_lives_beside_the_catalog_cache(self):
+        from sota_anchor.catalog import default_cache_path
+
         assert seed_path().name == SEED_FILENAME
-        assert seed_path().parent.name == "sota-anchor"
+        assert seed_path().parent == default_cache_path().parent
 
     def test_writes_the_block(self, tmp_path, catalog):
         target = tmp_path / SEED_FILENAME

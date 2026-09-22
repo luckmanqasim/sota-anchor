@@ -364,3 +364,41 @@ class TestDeclaredCapabilities:
     def test_missing_architecture_does_not_crash(self):
         catalog = build_catalog([{"id": "acme/bare", "created": ts(2026, 9, 1)}], now=NOW)
         assert catalog.by_id("acme/bare").input_modalities == ()
+
+
+class TestCacheLocation:
+    """One cache directory, resolved the same way by Python and by the hook.
+
+    The hook honoured SOTA_ANCHOR_CACHE_DIR and Python did not. The refresh the
+    hook spawned therefore wrote to a different directory from the one it read,
+    and hook tests that pointed the hook at a temp dir still had their refresh
+    overwrite the real ~/.cache.
+    """
+
+    def test_honours_the_environment_override(self, monkeypatch, tmp_path):
+        from sota_anchor.catalog import default_cache_path
+
+        monkeypatch.setenv("SOTA_ANCHOR_CACHE_DIR", str(tmp_path / "elsewhere"))
+        assert default_cache_path().parent == tmp_path / "elsewhere"
+
+    def test_defaults_under_the_home_directory(self, monkeypatch):
+        from pathlib import Path
+
+        from sota_anchor.catalog import default_cache_path
+
+        monkeypatch.delenv("SOTA_ANCHOR_CACHE_DIR", raising=False)
+        assert default_cache_path() == Path.home() / ".cache" / "sota-anchor" / "catalog.json"
+
+    def test_a_blank_override_means_the_default(self, monkeypatch):
+        from pathlib import Path
+
+        from sota_anchor.catalog import default_cache_path
+
+        monkeypatch.setenv("SOTA_ANCHOR_CACHE_DIR", "  ")
+        assert default_cache_path().parent == Path.home() / ".cache" / "sota-anchor"
+
+    def test_the_session_block_follows_the_override(self, monkeypatch, tmp_path):
+        from sota_anchor.seed import seed_path
+
+        monkeypatch.setenv("SOTA_ANCHOR_CACHE_DIR", str(tmp_path))
+        assert seed_path().parent == tmp_path

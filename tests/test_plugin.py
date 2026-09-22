@@ -298,8 +298,56 @@ class TestHookExecution:
         """bash eats backslashes in an unquoted argument, so hand it forward slashes."""
         return str(path).replace("\\", "/")
 
-    def _run(self, script: str, *, env: dict[str, str], stdin: str = "") -> subprocess.CompletedProcess:
-        merged = {**os.environ, **{k: self._posix(v) for k, v in env.items()}}
+    #: Stands in for every tool the refresh ladder can reach. It records how it
+    #: was called and touches nothing -- without it, a hook run with no cached
+    #: block spawned a real `sota-anchor seed --refresh`, which fetched the live
+    #: catalog and overwrote the developer's own cache.
+    FAKE_TOOL = (
+        "#!/usr/bin/env bash\n"
+        "{\n"
+        '  printf "tool=%s\\n" "$(basename "$0")"\n'
+        '  printf "args=%s\\n" "$*"\n'
+        '  printf "cache=%s\\n" "${SOTA_ANCHOR_CACHE_DIR:-}"\n'
+        '} >> "${SOTA_FAKE_LOG:?}"\n'
+    )
+
+    @pytest.fixture(autouse=True)
+    def _fake_refresh_tools(self, tmp_path_factory):
+        bin_dir = tmp_path_factory.mktemp("fake-bin")
+        for name in ("uv", "sota-anchor"):
+            tool = bin_dir / name
+            tool.write_text(self.FAKE_TOOL, encoding="utf-8", newline="\n")
+            tool.chmod(0o755)
+        self.fake_bin = bin_dir
+        self.refresh_log = bin_dir / "refresh.log"
+
+    def _refresh_record(self, timeout: float = 10.0) -> dict[str, str]:
+        """Wait for the detached refresh to record itself, then parse it."""
+        import time
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.refresh_log.is_file():
+                text = self.refresh_log.read_text(encoding="utf-8")
+                if "cache=" in text:
+                    return dict(
+                        line.split("=", 1) for line in text.splitlines() if "=" in line
+                    )
+            time.sleep(0.05)
+        raise AssertionError("the hook never launched a refresh")
+
+    def _run(
+        self,
+        script: str,
+        *,
+        env: dict[str, str],
+        stdin: str = "",
+        unset: tuple[str, ...] = (),
+    ) -> subprocess.CompletedProcess:
+        inherited = {k: v for k, v in os.environ.items() if k not in unset}
+        merged = {**inherited, **{k: self._posix(v) for k, v in env.items()}}
+        merged["PATH"] = str(self.fake_bin) + os.pathsep + os.environ.get("PATH", "")
+        merged["SOTA_FAKE_LOG"] = self._posix(self.refresh_log)
         return subprocess.run(
             [self._bash(), self._posix(self.HOOKS / script)],
             capture_output=True,
@@ -390,6 +438,68 @@ class TestHookExecution:
         assert payload["additionalContext"] == "cached block"
         assert "hookSpecificOutput" not in payload
 
+    def test_carriage_returns_are_stripped_from_the_injected_block(self, tmp_path):
+        # A clone with core.autocrlf=true delivered CRLF files, and every line
+        # of injected context arrived carrying a literal \r.
+        from sota_anchor.seed import SEED_FILENAME
+
+        (tmp_path / SEED_FILENAME).write_bytes(b"line one\r\nline two\r\n")
+        result = self._run(
+            "session-start",
+            env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+        )
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "\r" not in context
+        assert context == "line one\nline two"
+
+    def test_refresh_runs_the_plugin_checkout_not_the_callers_project(self, tmp_path):
+        # A bare `uv run sota-anchor` resolves against the session's working
+        # directory: the user's project. There it found no sota-anchor, so no
+        # refresh ever succeeded, and in a project with a pyproject.toml it
+        # created a .venv and a uv.lock the user never asked for.
+        self._run(
+            "session-start",
+            env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path / "absent"), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+        )
+        record = self._refresh_record()
+        assert record["tool"] == "uv"
+        assert record["args"] == (
+            f"run --quiet --project {self._posix(REPO)} sota-anchor seed --refresh"
+        )
+
+    def test_refresh_writes_where_the_hook_reads(self, tmp_path):
+        target = tmp_path / "custom-cache"
+        self._run(
+            "session-start",
+            env={"SOTA_ANCHOR_CACHE_DIR": str(target), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+        )
+        assert self._refresh_record()["cache"].endswith(f"{tmp_path.name}/custom-cache")
+
+    def test_refresh_is_handed_the_resolved_default_directory(self, tmp_path):
+        # Unset override: bash resolves the default from HOME, while Python on
+        # Windows ignores HOME for USERPROFILE. Passing the directory the hook
+        # actually read makes the two agree by construction.
+        self._run(
+            "session-start",
+            env={"HOME": str(tmp_path), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+            unset=("SOTA_ANCHOR_CACHE_DIR",),
+        )
+        cache = self._refresh_record()["cache"]
+        assert cache.endswith(f"{tmp_path.name}/.cache/sota-anchor")
+
+    def test_a_fresh_block_triggers_no_refresh(self, tmp_path):
+        import time
+
+        from sota_anchor.seed import SEED_FILENAME, write_seed
+
+        write_seed("fresh block", path=tmp_path / SEED_FILENAME)
+        self._run(
+            "session-start",
+            env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path), "CLAUDE_PLUGIN_ROOT": str(REPO)},
+        )
+        time.sleep(1.0)  # a detached refresh starts within milliseconds
+        assert not self.refresh_log.exists()
+
     def test_prompt_hook_is_silent_by_default(self):
         result = self._run("user-prompt-submit", env={"SOTA_ANCHOR_PROMPT_HOOK": "0"},
                            stdin='{"prompt": "I cannot do this, add a workaround"}')
@@ -438,21 +548,9 @@ class TestMcpPortability:
 class TestLineEndingResilience:
     """A fresh clone with core.autocrlf=true checked out bootstrap-block.md as
     CRLF, and every line of injected context arrived carrying a literal \r.
-    The hook must not depend on the reader's git configuration.
+    The hook must not depend on the reader's git configuration. (The execution
+    test for this lives in TestHookExecution, which fakes the refresh tools.)
     """
-
-    def test_carriage_returns_are_stripped_from_the_injected_block(self, tmp_path):
-        from sota_anchor.seed import SEED_FILENAME
-
-        (tmp_path / SEED_FILENAME).write_bytes(b"line one\r\nline two\r\n")
-        runner = TestHookExecution()
-        result = runner._run(
-            "session-start",
-            env={"SOTA_ANCHOR_CACHE_DIR": str(tmp_path), "CLAUDE_PLUGIN_ROOT": str(REPO)},
-        )
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "\r" not in context
-        assert context == "line one\nline two"
 
     def test_bootstrap_block_is_declared_lf_in_gitattributes(self):
         attributes = (REPO / ".gitattributes").read_text(encoding="utf-8")
