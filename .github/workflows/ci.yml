@@ -50,11 +50,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate plugin manifests
         # Parses .claude-plugin/plugin.json, hooks/hooks.json and .mcp.json, and
-        # checks that hooks.json points at scripts that exist.
+        # checks that the scripts hooks.json runs exist and are executable:
+        # hooks.json invokes run-hook.cmd directly, so without the execute bit
+        # every hook fails on Linux and macOS with "Permission denied".
         run: python -m json.tool .claude-plugin/plugin.json > /dev/null
           && python -m json.tool hooks/hooks.json > /dev/null
           && python -m json.tool .mcp.json > /dev/null
-          && test -x hooks/run-hook.cmd -o -f hooks/run-hook.cmd
-          && test -f hooks/session-start
-          && test -f hooks/user-prompt-submit
+          && test -x hooks/run-hook.cmd
+          && test -x hooks/session-start
+          && test -x hooks/user-prompt-submit
           && echo "plugin manifests OK"

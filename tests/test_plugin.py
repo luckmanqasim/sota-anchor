@@ -248,6 +248,25 @@ class TestHookScripts:
         assert "exit 2" not in code
         assert "exit 0" in code
 
+    @pytest.mark.parametrize("script", ["run-hook.cmd", "session-start", "user-prompt-submit"])
+    def test_scripts_are_committed_executable(self, script):
+        # hooks.json runs "${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" directly.
+        # Committed as 100644, a clone on Linux or macOS got -rw-r--r-- and
+        # every hook failed with "Permission denied" (exit 126): measured in a
+        # fresh WSL clone. Windows never noticed, having no execute bit.
+        import shutil
+
+        if not (REPO / ".git").exists() or not shutil.which("git"):
+            pytest.skip("not a git checkout")
+        entry = subprocess.run(
+            ["git", "ls-files", "-s", f"hooks/{script}"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert entry.startswith("100755"), entry
+
     @pytest.mark.parametrize("script", ["session-start", "user-prompt-submit"])
     def test_scripts_are_lf_terminated(self, script):
         # CRLF in a shebang script makes bash fail with a cryptic \\r error.
