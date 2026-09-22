@@ -9,7 +9,9 @@ proposal against unrelated noise while appearing to work.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import inspect
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -28,6 +30,10 @@ from sota_anchor.retriever import (
 from .conftest import NOW
 
 QUERY = "multimodal VLM direct vector polygon extraction technical drawings"
+
+#: The two original sources. Tests of their mechanics name them explicitly, so
+#: that sleeps, attempts and errors from the newer sources cannot leak in.
+LEGACY = ("arxiv", "github")
 
 
 @pytest.fixture(autouse=True)
@@ -124,8 +130,8 @@ class TestArxivQueryBuilder:
         assert "all:a" not in build_arxiv_queries("a vector polygon extraction")[0]
 
     def test_three_letter_acronyms_survive_tokenisation(self):
-        # Not necessarily in the widest rung -- the width cap sheds the shortest
-        # terms first -- but never dropped by the minimum-length filter.
+        # Never dropped by the minimum-length filter: short identifiers such as
+        # file extensions are often the most specific term in a query.
         from sota_anchor.retriever import extract_terms
 
         assert "vlm" in extract_terms(QUERY)
@@ -138,10 +144,11 @@ class TestArxivQueryBuilder:
         ladder = build_arxiv_queries("alpha bravo charlie delta")
         assert [len(q.split(" AND ")) for q in ladder] == [4, 3, 2]
 
-    def test_ladder_drops_the_least_salient_term_first(self):
-        # Shortest term goes first: 'vlm' before any longer term.
+    def test_ladder_drops_the_last_written_term_first(self):
+        # The widest rung is the first four terms as written; relaxing sheds the
+        # fourth ('vector') and keeps the first ('multimodal').
         second = build_arxiv_queries(QUERY)[1]
-        assert "all:vlm" not in second
+        assert "all:vector" not in second
         assert "all:multimodal" in second
 
     def test_ladder_floors_at_two_terms(self):
@@ -182,7 +189,7 @@ class TestArxivRetrieval:
     async def _gather(self, handler, **kwargs):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await gather_evidence(
-                QUERY, client=client, now=NOW, months=12, **kwargs
+                QUERY, client=client, now=NOW, months=12, sources=LEGACY, **kwargs
             )
 
     async def test_returns_recent_papers_as_evidence(self):
@@ -292,7 +299,9 @@ class TestArxivRetrieval:
 class TestGithubRetrieval:
     async def _gather(self, handler, **kwargs):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await gather_evidence(QUERY, client=client, now=NOW, months=12, **kwargs)
+            return await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sources=LEGACY, **kwargs
+            )
 
     async def test_active_repos_become_evidence(self):
         def handler(request):
@@ -344,7 +353,9 @@ class TestGithubRetrieval:
 class TestDegradation:
     async def _gather(self, handler, **kwargs):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await gather_evidence(QUERY, client=client, now=NOW, months=12, **kwargs)
+            return await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sources=LEGACY, **kwargs
+            )
 
     async def test_one_source_failing_does_not_lose_the_other(self):
         def handler(request):
@@ -503,7 +514,9 @@ class TestRateLimiting:
             waits.append(seconds)
 
         async with self._client(handler) as client:
-            await gather_evidence(QUERY, client=client, now=NOW, months=12, sleep=fake_sleep)
+            await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sleep=fake_sleep, sources=LEGACY
+            )
 
         assert waits
         assert min(waits) >= ARXIV_MIN_INTERVAL
@@ -520,7 +533,9 @@ class TestRateLimiting:
             waits.append(seconds)
 
         async with self._client(handler) as client:
-            await gather_evidence(QUERY, client=client, now=NOW, months=12, sleep=fake_sleep)
+            await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sleep=fake_sleep, sources=LEGACY
+            )
 
         assert waits == []
 
@@ -573,7 +588,9 @@ class TestRateLimiting:
                 return httpx.Response(200, json=repos([]))
             calls += 1
             if calls == 1:
-                return httpx.Response(406, text="")
+                # 429 means "slow down" and does yield to waiting. (A 406 is
+                # arXiv refusing the client, and goes to the fallback instead.)
+                return httpx.Response(429, text="")
             return httpx.Response(
                 200, text=atom([("After backoff", "2026-09-01T10:00:00Z", "vector polygon")])
             )
@@ -600,7 +617,9 @@ class TestRateLimiting:
             waits.append(seconds)
 
         async with self._client(handler) as client:
-            await gather_evidence(QUERY, client=client, now=NOW, months=12, sleep=fake_sleep)
+            await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sleep=fake_sleep, sources=("arxiv",)
+            )
 
         assert waits == sorted(waits)
         assert len(set(waits)) > 1
@@ -653,7 +672,7 @@ class TestGithubRelaxation:
         terms = [q for q in ladder if len(q.split()) == 2]  # one term + pushed bound
         assert terms
 
-    def test_most_salient_term_survives_every_rung(self):
+    def test_first_written_term_survives_every_rung(self):
         from sota_anchor.retriever import build_github_queries
 
         for query in build_github_queries(QUERY, now=NOW, months=12):
@@ -666,7 +685,7 @@ class TestGithubRelaxation:
             if GITHUB_URL not in str(request.url):
                 return httpx.Response(200, text=atom([]))
             attempts.append(parse_qs(urlparse(str(request.url)).query)["q"][0])
-            if len(attempts) < 3:
+            if len(attempts) < 2:
                 return httpx.Response(200, json=repos([]))
             return httpx.Response(
                 200,
@@ -674,10 +693,12 @@ class TestGithubRelaxation:
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            evidence = await gather_evidence(QUERY, client=client, now=NOW, months=12)
+            evidence = await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sources=LEGACY
+            )
 
-        assert len(attempts) == 3
-        assert len(attempts[0].split()) > len(attempts[2].split())
+        assert len(attempts) == 2
+        assert len(attempts[0].split()) > len(attempts[1].split())
         assert any(item.title == "acme/found" for item in evidence.items)
 
     async def test_stops_at_the_first_rung_with_results(self):
@@ -971,6 +992,36 @@ class TestArxivFallback:
         assert used, "fallback was never attempted"
         assert any(item.title == "Rescued paper" for item in evidence.items)
 
+    async def test_a_refusal_goes_straight_to_the_fallback(self):
+        # httpx is refused with 406 however often it retries. Measured live, each
+        # rung spent 5s + 10s of backoff before reaching the fallback: 45s of a
+        # 55s retrieval, against a 60s deadline shared with every other source.
+        calls = 0
+        waits: list[float] = []
+
+        def handler(request):
+            nonlocal calls
+            if ARXIV_URL in str(request.url):
+                calls += 1
+                return httpx.Response(406, text="")
+            return httpx.Response(200, json=repos([]))
+
+        async def fallback(url: str) -> str:
+            return atom([("Rescued", "2026-08-26T10:00:00Z", "vector polygon extraction")])
+
+        async def fake_sleep(seconds: float) -> None:
+            waits.append(seconds)
+
+        async with self._client(handler) as client:
+            evidence = await gather_evidence(
+                QUERY, client=client, now=NOW, months=12, sources=("arxiv",),
+                sleep=fake_sleep, arxiv_fallback=fallback,
+            )
+
+        assert calls == 1
+        assert waits == []
+        assert [item.title for item in evidence.items] == ["Rescued"]
+
     async def test_the_fallback_url_percent_encodes_spaces(self):
         # arXiv reads '+' as a literal plus, which makes the field query invalid.
         captured: list[str] = []
@@ -1073,13 +1124,14 @@ class TestLadderWidth:
         )
         assert len(ladder[0].split(" AND ")) <= ARXIV_MAX_TERMS
 
-    def test_the_cap_keeps_the_most_salient_terms(self):
+    def test_the_cap_keeps_the_first_written_terms(self):
         first = build_arxiv_queries(
             "MEP pipe penetration extraction construction drawings multimodal"
         )[0]
-        # Longest terms survive; the shortest are what the cap sheds.
-        assert "all:construction" in first
-        assert "all:mep" not in first
+        # Length used to decide, and it shed "mep" -- the most specific term in
+        # the query -- before generic words like "construction".
+        assert "all:mep" in first
+        assert "all:construction" not in first
 
     def test_a_short_query_is_unaffected(self):
         ladder = build_arxiv_queries("vector polygon extraction")
@@ -1139,3 +1191,730 @@ class TestBudgetScaling:
             ["alpha bravo charlie", "delta echo foxtrot", "golf hotel india", "juliet kilo lima"]
         )
         assert attempts <= ARXIV_TOTAL_CAP
+
+
+# ---------------------------------------------------------------------------
+# Multi-source retrieval: package registries, Hugging Face papers, the optional
+# web source, and the budgets every source shares.
+# ---------------------------------------------------------------------------
+
+HOSTS = {
+    "export.arxiv.org": "arxiv",
+    "api.github.com": "github",
+    "huggingface.co": "huggingface",
+    "registry.npmjs.org": "npm",
+    "crates.io": "crates",
+    "api.search.brave.com": "web",
+}
+
+KEYLESS = ("arxiv", "github", "huggingface", "npm", "crates")
+
+
+def empty(source: str) -> httpx.Response:
+    """A well-formed response with no results, in each source's own shape."""
+    if source == "arxiv":
+        return httpx.Response(200, text=atom([]))
+    bodies = {
+        "github": repos([]),
+        "huggingface": [],
+        "npm": {"objects": [], "total": 0},
+        "crates": {"crates": [], "meta": {"total": 0}},
+        "web": {"type": "search", "web": {"type": "search", "results": []}},
+    }
+    return httpx.Response(200, json=bodies[source])
+
+
+def router(**handlers):
+    """Dispatch by host to per-source handlers; an unrouted source answers empty.
+
+    An unknown host raises, so a request to anywhere unexpected fails the test.
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        source = HOSTS[request.url.host]
+        chosen = handlers.get(source)
+        if chosen is None:
+            return empty(source)
+        result = chosen(request)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    return handler
+
+
+def query_of(request: httpx.Request, key: str) -> str:
+    return parse_qs(urlparse(str(request.url)).query)[key][0]
+
+
+def hf_papers(items: list[tuple[str, str, str, str]], **extra) -> list[dict]:
+    """A Hugging Face paper-search payload of (arxiv_id, title, publishedAt, summary)."""
+    return [
+        {
+            "paper": {
+                "id": arxiv_id,
+                "title": title,
+                "summary": summary,
+                "publishedAt": published,
+                "upvotes": 12,
+                **extra,
+            },
+            "publishedAt": published,
+            "title": title,
+            "summary": summary,
+        }
+        for arxiv_id, title, published, summary in items
+    ]
+
+
+def npm_packages(items: list[tuple[str, str, str]]) -> dict:
+    """An npm registry search payload of (name, description, date)."""
+    return {
+        "objects": [
+            {
+                "package": {
+                    "name": name,
+                    "version": "1.4.0",
+                    "description": description,
+                    "keywords": [],
+                    "date": date,
+                    "links": {"npm": f"https://www.npmjs.com/package/{name}"},
+                }
+            }
+            for name, description, date in items
+        ],
+        "total": len(items),
+    }
+
+
+def crate_list(items: list[tuple[str, str, str]]) -> dict:
+    """A crates.io search payload of (name, description, updated_at)."""
+    return {
+        "crates": [
+            {
+                "name": name,
+                "description": description,
+                "updated_at": updated,
+                "max_stable_version": "0.3.1",
+                "downloads": 12345,
+            }
+            for name, description, updated in items
+        ],
+        "meta": {"total": len(items)},
+    }
+
+
+def web_results(items: list[tuple[str, str, str, str | None]]) -> dict:
+    """A Brave web-search payload of (title, url, description, page_age)."""
+    return {
+        "type": "search",
+        "web": {
+            "type": "search",
+            "results": [
+                {"title": title, "url": url, "description": description, "page_age": page_age}
+                for title, url, description, page_age in items
+            ],
+        },
+    }
+
+
+async def collect(text, handler, **kwargs) -> EvidenceSet:
+    kwargs.setdefault("now", NOW)
+    kwargs.setdefault("months", 12)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        return await gather_evidence(text, client=client, **kwargs)
+
+
+class TestAuthorOrderSalience:
+    """The query's author decides which terms are specific, not their length.
+
+    Length salience dropped the shortest terms first, and in an engineering
+    query the shortest terms are usually the identifiers: `nwd`, `glb`, `mep`.
+    On live GitHub, `nwd reader` found the independent NWD reader a refusing
+    session never looked for, while `navisworks reader parser` found nothing.
+    """
+
+    def test_terms_keep_the_order_they_were_written(self):
+        from sota_anchor.retriever import extract_terms
+
+        assert extract_terms("nwd navisworks reader parser") == [
+            "nwd",
+            "navisworks",
+            "reader",
+            "parser",
+        ]
+
+    def test_function_words_are_still_dropped(self):
+        from sota_anchor.retriever import extract_terms
+
+        assert extract_terms("a reader for the nwd format") == ["reader", "nwd", "format"]
+
+    def test_a_leading_identifier_survives_every_arxiv_rung(self):
+        for query in build_arxiv_queries("nwd navisworks reader parser"):
+            assert "all:nwd" in query
+
+    def test_a_leading_identifier_survives_every_github_rung(self):
+        from sota_anchor.retriever import build_github_queries
+
+        for query in build_github_queries("nwd navisworks reader parser", now=NOW, months=12):
+            assert query.split()[0] == "nwd"
+
+
+class TestGithubBudget:
+    """Three attempts shared by two vectors ran out before either reached its
+    two-term rung, which is where repository descriptions start to match."""
+
+    async def _asked(self, vectors) -> list[str]:
+        asked: list[str] = []
+
+        def github(request):
+            asked.append(query_of(request, "q"))
+            return httpx.Response(200, json=repos([]))
+
+        await collect(vectors, router(github=github), sources=("github",))
+        return asked
+
+    async def test_each_vector_reaches_its_two_term_rung(self):
+        asked = await self._asked(["nwd glb conversion", "nwd navisworks reader"])
+        two_terms = [q for q in asked if len(q.split()) == 3]  # plus the pushed bound
+        assert any(q.startswith("nwd glb ") for q in two_terms)
+        assert any(q.startswith("nwd navisworks ") for q in two_terms)
+
+    async def test_the_widest_rung_is_three_terms(self):
+        asked = await self._asked(["nwd navisworks reader parser"])
+        assert len(asked[0].split()) == 4  # three terms plus the pushed bound
+
+    async def test_total_is_capped_however_many_vectors(self):
+        from sota_anchor.retriever import GITHUB_TOTAL_CAP
+
+        asked = await self._asked(
+            ["alpha bravo charlie", "delta echo foxtrot", "golf hotel india", "juliet kilo lima"]
+        )
+        assert len(asked) <= GITHUB_TOTAL_CAP
+
+
+class TestRelevanceFloor:
+    """Fuzzy and semantic search never come back empty, and a one-word GitHub
+    query matches every project that shares an acronym. A result must mention
+    two of its vector's terms to count as evidence."""
+
+    async def test_an_item_matching_one_term_is_not_evidence(self):
+        def github(request):
+            if query_of(request, "q").split()[:-1] == ["nwd"]:
+                return httpx.Response(
+                    200,
+                    json=repos(
+                        [
+                            (
+                                "jwwangchn/NWD",
+                                "Normalized Gaussian Wasserstein Distance for tiny objects",
+                                "2026-09-01T00:00:00Z",
+                            )
+                        ]
+                    ),
+                )
+            return httpx.Response(200, json=repos([]))
+
+        evidence = await collect(["nwd converter"], router(github=github), sources=("github",))
+        assert evidence.is_empty
+
+    async def test_an_off_topic_rung_does_not_stop_the_ladder(self):
+        asked: list[str] = []
+
+        def github(request):
+            asked.append(query_of(request, "q"))
+            if len(asked) == 1:
+                noise = ("acme/noise", "Unrelated nwd utilities", "2026-09-01T00:00:00Z")
+                return httpx.Response(200, json=repos([noise]))
+            hit = ("acme/nwd-reader", "Reads NWD files", "2026-09-01T00:00:00Z")
+            return httpx.Response(200, json=repos([hit]))
+
+        evidence = await collect(["nwd reader"], router(github=github), sources=("github",))
+        assert len(asked) == 2
+        assert [item.title for item in evidence.items] == ["acme/nwd-reader"]
+
+    async def test_a_single_term_vector_needs_only_that_term(self):
+        def github(request):
+            hit = ("acme/ifc-tools", "Helpers around IFC models", "2026-09-01T00:00:00Z")
+            return httpx.Response(200, json=repos([hit]))
+
+        evidence = await collect(["ifc"], router(github=github), sources=("github",))
+        assert evidence.items
+
+    async def test_arxiv_keeps_its_keyword_and_semantics(self):
+        # arXiv ANDs every term already, and matches stemmed forms the overlap
+        # count cannot see; a floor there would reject on-target papers.
+        def arxiv(request):
+            return httpx.Response(200, text=atom([("X", "2026-08-01T10:00:00Z", "vector")]))
+
+        evidence = await collect(QUERY, router(arxiv=arxiv), sources=("arxiv",))
+        assert [item.title for item in evidence.items] == ["X"]
+
+
+class TestHuggingFacePapers:
+    """Semantic search over papers: what arXiv's keyword AND cannot do."""
+
+    VECTOR = "vector coordinate extraction engineering drawings"
+
+    @staticmethod
+    def _paper(**extra):
+        return hf_papers(
+            [
+                (
+                    "2601.12345",
+                    "Vector extraction from engineering drawings",
+                    "2026-01-23T00:00:00.000Z",
+                    "We extract vector coordinates from drawings directly.",
+                )
+            ],
+            **extra,
+        )
+
+    async def test_papers_become_dated_evidence(self):
+        def hf(request):
+            return httpx.Response(200, json=self._paper())
+
+        evidence = await collect(self.VECTOR, router(huggingface=hf), sources=("huggingface",))
+        [item] = evidence.items
+        assert item.source == "huggingface"
+        assert item.url == "https://huggingface.co/papers/2601.12345"
+        assert item.published == dt.date(2026, 1, 23)
+
+    async def test_searches_with_the_whole_phrase(self):
+        seen: list[str] = []
+
+        def hf(request):
+            seen.append(query_of(request, "q"))
+            return httpx.Response(200, json=[])
+
+        await collect(self.VECTOR, router(huggingface=hf), sources=("huggingface",))
+        assert seen == [self.VECTOR]
+
+    async def test_one_request_per_vector(self):
+        seen: list[str] = []
+
+        def hf(request):
+            seen.append(query_of(request, "q"))
+            return httpx.Response(200, json=[])
+
+        await collect(
+            ["alpha bravo", "charlie delta"], router(huggingface=hf), sources=("huggingface",)
+        )
+        assert seen == ["alpha bravo", "charlie delta"]
+
+    async def test_papers_outside_the_window_are_excluded(self):
+        def hf(request):
+            return httpx.Response(
+                200,
+                json=hf_papers(
+                    [
+                        (
+                            "2410.00001",
+                            "Vector extraction from engineering drawings",
+                            "2024-10-02T00:00:00.000Z",
+                            "Vector coordinates from drawings.",
+                        )
+                    ]
+                ),
+            )
+
+        evidence = await collect(self.VECTOR, router(huggingface=hf), sources=("huggingface",))
+        assert evidence.is_empty
+
+    async def test_off_topic_semantic_matches_are_dropped(self):
+        # Observed live: "navisworks nwd reader" returned marine-fog nowcasting.
+        def hf(request):
+            fog = ("2603.00001", "Generative nowcasting of marine fog", "2026-03-24T00:00:00Z", "Visibility.")
+            return httpx.Response(200, json=hf_papers([fog]))
+
+        evidence = await collect(
+            "nwd navisworks reader", router(huggingface=hf), sources=("huggingface",)
+        )
+        assert evidence.is_empty
+
+    async def test_reports_upvotes_and_linked_code(self):
+        def hf(request):
+            return httpx.Response(200, json=self._paper(githubRepo="https://github.com/acme/vecx"))
+
+        evidence = await collect(self.VECTOR, router(huggingface=hf), sources=("huggingface",))
+        assert "12 upvotes" in evidence.items[0].detail
+        assert "https://github.com/acme/vecx" in evidence.items[0].detail
+
+    async def test_a_paper_arxiv_also_returned_appears_once(self):
+        title = "Vector extraction from engineering drawings"
+        summary = "Vector coordinate extraction from engineering drawings."
+
+        def arxiv(request):
+            return httpx.Response(200, text=atom([(title, "2026-08-26T10:00:00Z", summary)]))
+
+        def hf(request):
+            paper = ("2608.00001", title, "2026-08-26T00:00:00.000Z", summary)
+            return httpx.Response(200, json=hf_papers([paper]))
+
+        evidence = await collect(
+            self.VECTOR, router(arxiv=arxiv, huggingface=hf), sources=("arxiv", "huggingface")
+        )
+        assert len(evidence.items) == 1
+
+    async def test_an_unexpected_payload_is_reported_not_raised(self):
+        def hf(request):
+            return httpx.Response(200, json={"error": "the shape changed"})
+
+        evidence = await collect(self.VECTOR, router(huggingface=hf), sources=("huggingface",))
+        assert any(error.startswith("huggingface") for error in evidence.errors)
+
+
+class TestNpmRegistry:
+    async def test_packages_become_evidence(self):
+        def npm(request):
+            package = (
+                "gltf-pipeline",
+                "Content pipeline tools for glTF assets, with a converter.",
+                "2026-04-03T00:00:00.000Z",
+            )
+            return httpx.Response(200, json=npm_packages([package]))
+
+        evidence = await collect("gltf converter", router(npm=npm), sources=("npm",))
+        [item] = evidence.items
+        assert item.source == "npm"
+        assert item.url == "https://www.npmjs.com/package/gltf-pipeline"
+        assert item.detail == "version 1.4.0"
+
+    async def test_relaxes_the_search_text_rung_by_rung(self):
+        seen: list[str] = []
+
+        def npm(request):
+            seen.append(query_of(request, "text"))
+            return httpx.Response(200, json=npm_packages([]))
+
+        await collect("nwd glb converter", router(npm=npm), sources=("npm",))
+        assert seen[:2] == ["nwd glb converter", "nwd glb"]
+
+    async def test_releases_outside_the_window_are_excluded(self):
+        def npm(request):
+            old = ("gltf-legacy", "An old glTF converter.", "2019-05-05T00:00:00.000Z")
+            return httpx.Response(200, json=npm_packages([old]))
+
+        evidence = await collect("gltf converter", router(npm=npm), sources=("npm",))
+        assert evidence.is_empty
+
+    async def test_fuzzy_matches_below_the_floor_are_dropped(self):
+        def npm(request):
+            namesake = ("nwd", "Selenium WebDriver wire protocol for node.", "2026-06-09T00:00:00Z")
+            return httpx.Response(200, json=npm_packages([namesake]))
+
+        evidence = await collect("nwd navisworks reader", router(npm=npm), sources=("npm",))
+        assert evidence.is_empty
+
+
+class TestCratesRegistry:
+    async def test_crates_become_evidence(self):
+        def crates(request):
+            crate = ("gltf-convert", "A glTF converter for Rust.", "2026-09-13T10:00:00.000000Z")
+            return httpx.Response(200, json=crate_list([crate]))
+
+        evidence = await collect("gltf converter", router(crates=crates), sources=("crates",))
+        [item] = evidence.items
+        assert item.source == "crates"
+        assert item.url == "https://crates.io/crates/gltf-convert"
+        assert "version 0.3.1" in item.detail
+        assert "12,345 downloads" in item.detail
+
+    async def test_requests_identify_the_client(self):
+        # crates.io's crawler policy requires a User-Agent naming the client.
+        agents: list[str] = []
+
+        def crates(request):
+            agents.append(request.headers.get("user-agent", ""))
+            return httpx.Response(200, json=crate_list([]))
+
+        await collect("gltf converter", router(crates=crates), sources=("crates",))
+        assert agents and all("sota-anchor" in agent for agent in agents)
+
+    async def test_requests_are_spaced_to_the_crawler_policy(self):
+        waits: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            waits.append(seconds)
+
+        await collect(
+            ["alpha bravo charlie", "delta echo foxtrot"],
+            router(),
+            sources=("crates",),
+            sleep=fake_sleep,
+        )
+        assert waits
+        assert min(waits) >= 1.0
+
+
+class TestWebSearch:
+    """Optional: a general web source, active only when BRAVE_API_KEY is set,
+    so the zero-key default never changes."""
+
+    async def test_is_skipped_without_a_key(self):
+        called: list[str] = []
+
+        def web(request):
+            called.append(str(request.url))
+            return httpx.Response(200, json=web_results([]))
+
+        evidence = await collect("nwd reader", router(web=web))
+        assert called == []
+        assert not any(error.startswith("web") for error in evidence.errors)
+
+    async def test_runs_when_the_key_is_in_the_environment(self, monkeypatch):
+        monkeypatch.setenv("BRAVE_API_KEY", "test-key-not-real")
+        tokens: list[str] = []
+
+        def web(request):
+            tokens.append(request.headers.get("x-subscription-token", ""))
+            return httpx.Response(200, json=web_results([]))
+
+        await collect("nwd reader", router(web=web))
+        assert tokens and set(tokens) == {"test-key-not-real"}
+
+    async def test_freshness_is_the_rolling_window(self):
+        windows: list[str] = []
+
+        def web(request):
+            windows.append(query_of(request, "freshness"))
+            return httpx.Response(200, json=web_results([]))
+
+        await collect("nwd reader", router(web=web), sources=("web",), web_api_key="k")
+        assert windows == ["2025-09-19to2026-09-19"]
+
+    async def test_results_are_dated_by_page_age_and_undated_ones_skipped(self):
+        def web(request):
+            return httpx.Response(
+                200,
+                json=web_results(
+                    [
+                        (
+                            "An open NWD reader",
+                            "https://example.com/nwd-reader",
+                            "Read <strong>NWD</strong> files with this reader.",
+                            "2026-09-10T08:00:00",
+                        ),
+                        ("Undated", "https://example.com/other", "Another nwd reader.", None),
+                    ]
+                ),
+            )
+
+        evidence = await collect("nwd reader", router(web=web), sources=("web",), web_api_key="k")
+        [item] = evidence.items
+        assert item.published == dt.date(2026, 9, 10)
+        assert "<strong>" not in item.snippet
+
+    async def test_requested_without_a_key_it_says_why(self):
+        evidence = await collect("nwd reader", router(), sources=("web",))
+        [error] = evidence.errors
+        assert "BRAVE_API_KEY" in error
+
+    async def test_a_rejected_key_is_reported_without_echoing_it(self):
+        def web(request):
+            return httpx.Response(401, json={"error": "unauthorized"})
+
+        evidence = await collect(
+            "nwd reader", router(web=web), sources=("web",), web_api_key="secret-key-value"
+        )
+        [error] = evidence.errors
+        assert "401" in error
+        assert "secret-key-value" not in error
+
+
+class TestSharedDeadline:
+    """One budget of wall-clock time across every source.
+
+    Without it the slowest source sets the latency of the whole check: arXiv's
+    3.5s spacing plus retry backoff alone could run past a minute.
+    """
+
+    async def test_a_source_that_never_answers_is_cut_off(self):
+        import time
+
+        never = asyncio.Event()
+
+        async def npm(request):
+            await never.wait()
+
+        def github(request):
+            hit = ("acme/nwd-reader", "Reads NWD files", "2026-09-01T00:00:00Z")
+            return httpx.Response(200, json=repos([hit]))
+
+        started = time.monotonic()
+        evidence = await collect(
+            ["nwd reader"], router(npm=npm, github=github), sources=("github", "npm"), deadline=0.3
+        )
+        assert time.monotonic() - started < 5
+        assert [item.title for item in evidence.items] == ["acme/nwd-reader"]
+        [error] = evidence.errors
+        assert error.startswith("npm")
+        assert "deadline" in error
+
+    async def test_results_found_before_the_deadline_are_kept(self):
+        never = asyncio.Event()
+
+        async def github(request):
+            if query_of(request, "q").startswith("nwd reader"):
+                hit = ("acme/nwd-reader", "Reads NWD files", "2026-09-01T00:00:00Z")
+                return httpx.Response(200, json=repos([hit]))
+            await never.wait()
+
+        evidence = await collect(
+            ["nwd reader", "glb writer"], router(github=github), sources=("github",), deadline=0.3
+        )
+        assert [item.title for item in evidence.items] == ["acme/nwd-reader"]
+        assert any("deadline" in error and "kept 1" in error for error in evidence.errors)
+
+
+class TestBoundedConcurrency:
+    """Sources run concurrently, but never more than a fixed number of requests
+    at once -- across all of them, the arXiv fallback included."""
+
+    async def _peak(self, limit: int, *, arxiv_refuses: bool = False) -> int:
+        import time
+
+        loop = asyncio.get_running_loop()
+        state = {"now": 0, "peak": 0}
+
+        async def busy(work):
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+            try:
+                await loop.run_in_executor(None, time.sleep, 0.02)
+                return work()
+            finally:
+                state["now"] -= 1
+
+        async def handler(request):
+            source = HOSTS[request.url.host]
+            if source == "arxiv" and arxiv_refuses:
+                return await busy(lambda: httpx.Response(406, text=""))
+            return await busy(lambda: empty(source))
+
+        async def fallback(url: str) -> str:
+            return await busy(lambda: atom([]))
+
+        await collect(
+            ["alpha bravo"], handler, sources=KEYLESS, max_concurrency=limit, arxiv_fallback=fallback
+        )
+        return state["peak"]
+
+    async def test_requests_in_flight_never_exceed_the_limit(self):
+        assert await self._peak(2) == 2
+
+    async def test_a_limit_of_one_serialises_everything(self):
+        assert await self._peak(1) == 1
+
+    async def test_the_arxiv_fallback_counts_against_the_limit(self):
+        assert await self._peak(1, arxiv_refuses=True) == 1
+
+
+class TestSourceSelection:
+    def test_the_default_sources_need_no_key(self):
+        from sota_anchor.retriever import KEYLESS_SOURCES
+
+        assert set(KEYLESS_SOURCES) == set(KEYLESS)
+
+    async def test_every_default_source_is_queried(self):
+        hit: set[str] = set()
+
+        def track(request):
+            hit.add(HOSTS[request.url.host])
+            return empty(HOSTS[request.url.host])
+
+        await collect("nwd reader", track)
+        assert hit == set(KEYLESS)
+
+    async def test_an_unknown_source_is_rejected(self):
+        with pytest.raises(ValueError, match="pypi"):
+            await collect("nwd reader", router(), sources=("pypi",))
+
+    async def test_every_failing_source_is_reported_once(self):
+        def down(request):
+            raise httpx.ConnectError("offline")
+
+        evidence = await collect("nwd reader", down)
+        assert evidence.is_empty
+        assert sorted(error.split(":")[0] for error in evidence.errors) == sorted(KEYLESS)
+
+
+class TestEvidenceRenderingPerSource:
+    """A date means something different per source; say which."""
+
+    @staticmethod
+    def _render(source: str, detail: str = "") -> str:
+        item = Evidence(
+            source=source,
+            title="t",
+            url="https://example.com",
+            published=dt.date(2026, 9, 1),
+            snippet="s",
+            detail=detail,
+        )
+        return EvidenceSet(items=[item]).render()
+
+    def test_a_repository_date_is_its_last_push(self):
+        assert "last push: 2026-09-01" in self._render("github")
+
+    def test_a_package_date_is_its_latest_release(self):
+        assert "latest release: 2026-09-01" in self._render("npm")
+        assert "latest release: 2026-09-01" in self._render("crates")
+
+    def test_a_paper_date_is_its_publication(self):
+        assert "published: 2026-09-01" in self._render("arxiv")
+        assert "published: 2026-09-01" in self._render("huggingface")
+
+    def test_detail_is_shown_beside_the_date(self):
+        assert "2026-09-01 (0 stars)" in self._render("github", "0 stars")
+
+
+class TestEngineeringScenario:
+    """The prompt a live session declined to check, run through retrieval.
+
+    The fake GitHub below ANDs a query's terms over name and description, as the
+    real one does, across repositories that exist: an independent NWD reader, a
+    converter, and unrelated projects that share the acronym. The vectors are
+    what the new inversion prompt asks for: the most specific term first.
+    """
+
+    CORPUS = (
+        (
+            "1817716374/nwd-reader",
+            "Independent C++20 Navisworks NWD/NWC/NWF reader for geometry, properties, "
+            "materials, textures and model hierarchy.",
+            "2026-09-06T18:53:21Z",
+        ),
+        (
+            "AnT1pal/NWD2DWG",
+            "Converter of Autodesk Navisworks (.NWD/.NWC) 3D geometry to DWG.",
+            "2026-09-01T00:00:00Z",
+        ),
+        (
+            "jwwangchn/NWD",
+            "Official code for a Normalized Gaussian Wasserstein Distance for tiny objects.",
+            "2026-06-21T00:00:00Z",
+        ),
+        ("blockdiag/nwdiag", "Network diagram generator.", "2026-01-20T00:00:00Z"),
+    )
+
+    def _github(self, request):
+        terms = query_of(request, "q").lower().split()[:-1]  # drop the pushed bound
+        hits = [
+            repo for repo in self.CORPUS if all(t in f"{repo[0]} {repo[1]}".lower() for t in terms)
+        ]
+        return httpx.Response(200, json=repos(hits))
+
+    async def _titles(self) -> list[str]:
+        evidence = await collect(
+            ["nwd glb conversion", "nwd navisworks reader"], router(github=self._github)
+        )
+        return [item.title for item in evidence.items]
+
+    async def test_the_independent_reader_is_found(self):
+        assert "1817716374/nwd-reader" in await self._titles()
+
+    async def test_acronym_collisions_are_not_evidence(self):
+        titles = await self._titles()
+        assert "jwwangchn/NWD" not in titles
+        assert "blockdiag/nwdiag" not in titles

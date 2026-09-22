@@ -24,6 +24,18 @@ def isolated_cache_dir(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_ambient_credentials(monkeypatch):
+    """Keep a developer's own keys out of the suite.
+
+    Retrieval picks these up from the environment, so a set BRAVE_API_KEY would
+    switch the web source on in every test, and a GITHUB_TOKEN would change the
+    headers a test asserts on.
+    """
+    for name in ("BRAVE_API_KEY", "GITHUB_TOKEN", "GH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def no_real_network(monkeypatch):
     """Fail any lookup of a real host, so "offline" is enforced, not assumed.
 
