@@ -1,16 +1,20 @@
 ---
-description: Check whether a design relies on a limitation that no longer exists
+description: Check whether a design relies on something assumed to be unavailable that may no longer be
 argument-hint: [design or architecture pitch]
 ---
 
-Use the `sota-architect` skill to arbitrate this proposal:
+Use the `sota-architect` skill to check this proposal:
 
 $ARGUMENTS
 
-Work through the skill's four steps in order: invert the proposal into an
-implicit limitation and a search query, retrieve evidence with
-`sota-anchor evidence --query "..." --json`, then judge strictly against what
-came back.
+Work through the skill's steps in order: invert the proposal into the limitation
+it assumes plus a `domain_query` and a `capability_query`, retrieve evidence with
+the `verify_architecture` MCP tool (the skill's CLI fallback only if the server
+is unreachable), then judge strictly against what came back.
+
+The check is not limited to what models can do. A custom parser for a format
+thought to need a vendor SDK, or a library rewritten from scratch, rests on an
+assumption just as checkable.
 
 If no proposal was supplied above, ask what design to check rather than guessing
 from the surrounding conversation.

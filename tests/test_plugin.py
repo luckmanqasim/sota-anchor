@@ -527,6 +527,45 @@ class TestHookExecution:
                                stdin=prompt)
             assert result.returncode == 0
 
+    def _nudged(self, prompt: str) -> bool:
+        result = self._run(
+            "user-prompt-submit",
+            env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
+            stdin=json.dumps({"prompt": prompt}),
+        )
+        return bool(result.stdout.strip())
+
+    def test_prompt_hook_nudges_on_an_unapostrophised_cant(self):
+        # The exact prompt a live session declined to check.
+        assert self._nudged(
+            "i need to convert some nwds to glbs, write a custom parer for it "
+            "since i cant use oda to read the files"
+        )
+
+    def test_prompt_hook_nudges_on_a_rewrite_from_scratch(self):
+        assert self._nudged("let's just write our own reader from scratch")
+
+    def test_prompt_hook_nudges_on_reverse_engineering(self):
+        assert self._nudged("we'll reverse engineer the binary layout")
+
+    def test_prompt_hook_matches_whole_words_only(self):
+        # "cant" sits inside "significant"; substring matching would fire here.
+        assert not self._nudged("this is a significant refactor of the applicant table")
+
+    def test_prompt_hook_nudge_claims_no_authority(self):
+        import re
+
+        from .test_framing import OVERRIDE_PATTERNS
+
+        result = self._run(
+            "user-prompt-submit",
+            env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
+            stdin=json.dumps({"prompt": "this cannot be done, add a workaround"}),
+        )
+        nudge = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        for pattern in OVERRIDE_PATTERNS:
+            assert not re.search(pattern, nudge, re.IGNORECASE), pattern
+
     def test_prompt_hook_emits_no_block_decision(self):
         result = self._run("user-prompt-submit", env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
                            stdin='{"prompt": "this is impossible, work around it"}')
@@ -585,10 +624,33 @@ class TestSkillToolPriority:
     def test_labels_the_cli_as_a_fallback(self):
         assert "Fallback" in self._body()
 
-    def test_fallback_checks_a_project_venv_before_calling(self):
+    def test_fallback_checks_the_plugin_venv_before_calling(self):
+        # The venv that exists is the plugin's own: the MCP server's `uv run`
+        # creates it in the plugin checkout. A project-relative ./.venv only
+        # holds sota-anchor if the user installed it there by hand.
         body = self._body()
-        assert ".venv/bin/sota-anchor" in body
-        assert ".venv/Scripts/sota-anchor.exe" in body
+        assert "${CLAUDE_PLUGIN_ROOT}/.venv/bin/sota-anchor" in body
+        assert "${CLAUDE_PLUGIN_ROOT}/.venv/Scripts/sota-anchor.exe" in body
+
+    @pytest.mark.parametrize(
+        "path",
+        [SKILL, COMMANDS / "sota-check.md", COMMANDS / "sota-sync.md"],
+        ids=lambda p: p.name,
+    )
+    def test_no_uv_run_escapes_the_plugin_checkout(self, path):
+        # A bare `uv run` resolves against the user's project: no sota-anchor
+        # there, and a .venv plus uv.lock created in any project that has a
+        # pyproject.toml. Claude Code substitutes ${CLAUDE_PLUGIN_ROOT} in skill
+        # and command text, so every invocation can name the checkout.
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "uv run" in line:
+                assert '--project "${CLAUDE_PLUGIN_ROOT}"' in line, line
+
+    def test_check_command_follows_the_skill_tool_order(self):
+        body = (COMMANDS / "sota-check.md").read_text(encoding="utf-8")
+        assert "sota-architect" in body
+        assert "verify_architecture" in body
+        assert "sota-anchor evidence --query" not in body
 
     def test_fallback_checks_the_system_path_too(self):
         assert "command -v sota-anchor" in self._body()

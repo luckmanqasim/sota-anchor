@@ -262,10 +262,15 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
 INVERSION_PROMPT = """Given the following technical task or architecture proposal:
 "{proposal}"
 
-Analyze the proposal and identify the underlying engineering assumptions about
-tool limitations. Answer the question: "What must be hard, impossible, or
-inaccurate for AI/software in this domain for this specific workaround/design to
-be justified?"
+Analyze the proposal and identify the assumption it takes for granted. Answer
+the question: "What must be unavailable, impossible or impractical for this
+specific workaround/design to be justified?" The answer is often not about AI:
+no library or reader for a file format, only a vendor SDK able to open it, no
+API for the data, no model able to do the task directly.
+
+Keep constraints the proposal states as given - a license that cannot be used, a
+dependency that cannot be added. The assumption to check is the one underneath
+the workaround: usually that nothing else already satisfies those constraints.
 
 Output valid JSON matching this schema:
 {{
@@ -277,11 +282,14 @@ Output valid JSON matching this schema:
 }}
 
 Both queries must be short keyword search phrases, not questions, suitable for
-searching recent research and repositories.
+searching recent research, repositories and package registries. Lead each with
+its most specific term - a file extension, format, product, library or protocol
+name - and put generic words last.
 
 - domain_query names the specific task in this domain's own vocabulary.
-- capability_query names the broad, foundational capability that would make the
-  workaround unnecessary, in vocabulary the task's own field may not use.
+- capability_query names whatever would make the workaround unnecessary - an
+  existing implementation, library, tool or model capability - in vocabulary
+  the task's own field may not use.
 
 Two queries, not one, because they fail differently. A narrow domain query
 misses a general advance indexed under other terminology; a broad capability
@@ -295,8 +303,9 @@ Proposed Workaround: "{proposed_workaround}"
 Recent SOTA Evidence (past {months} months):
 "{evidence}"
 
-Question: Has recent tooling, frontier model capabilities, or open-source
-advances in the past {months} months rendered this limitation/workaround obsolete?
+Question: Has recent tooling, a published implementation or package, frontier
+model capabilities, or open-source advances in the past {months} months rendered
+this limitation/workaround obsolete?
 
 Standard of proof:
 
@@ -304,11 +313,19 @@ Standard of proof:
    Training data is not admissible in either direction: it can neither
    establish that the limitation has fallen nor that it holds.
 2. Default baseline. The assumption stands unless the evidence explicitly
-   documents that a modern primitive, tool or method has superseded it.
-3. Threshold. Prefer evidence reporting benchmarked or demonstrated results
-   over evidence that merely proposes an approach. Absent, incomplete or
-   unbenchmarked evidence does not meet the threshold, and the assumption
-   stands by rule 2.
+   documents that a modern primitive, tool, implementation or method has
+   superseded it.
+3. Threshold, which depends on the kind of claim:
+   - Existence ("no library, reader or tool exists for this"): a published
+     repository or package whose description states that it does the task
+     documents that one exists. Mention its age and activity, because
+     existence is not maturity.
+   - Performance ("models cannot do this accurately"): prefer evidence
+     reporting benchmarked or demonstrated results over evidence that merely
+     proposes an approach.
+   Evidence that is absent, incomplete or off-target meets neither threshold,
+   and neither does an unbenchmarked result offered for a performance claim.
+   In those cases the assumption stands by rule 2.
 
 If YES, return valid JSON:
 {{

@@ -78,6 +78,21 @@ class TestNoOverrideLanguage:
             assert found is None, f"{name}: {found and found.group(0)}"
 
 
+class TestToolResultTemplates:
+    """Protocol payloads are asked for, so they may direct the host's method --
+    judge from the evidence, not from recall -- but not claim who it is."""
+
+    @pytest.mark.parametrize(
+        "name", ["INVERSION_TEMPLATE", "JUDGMENT_TEMPLATE", "NO_EVIDENCE_TEMPLATE"]
+    )
+    def test_no_template_claims_authority_or_identity(self, name):
+        from sota_anchor import protocol
+
+        text = getattr(protocol, name)
+        for pattern in OVERRIDE_PATTERNS:
+            assert not re.search(pattern, text, re.IGNORECASE), f"{name}: {pattern}"
+
+
 class TestProvenance:
     def test_the_session_block_names_the_plugin_that_injected_it(self, catalog):
         assert "sota-anchor" in render_seed(catalog).splitlines()[0]

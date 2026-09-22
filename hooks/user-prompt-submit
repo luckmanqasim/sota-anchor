@@ -14,22 +14,25 @@ set -uo pipefail
 payload="$(cat 2>/dev/null)" || exit 0
 lowered="$(printf '%s' "$payload" | tr '[:upper:]' '[:lower:]')"
 
-NUDGE="[SOTA ANCHOR] This request asserts that something cannot be done, or proposes routing around it. Your training data has a cutoff, so that limitation may already have been removed. Before building the workaround, use the sota-architect skill or run /sota-check on the design. If the limitation is real, carry on -- this is a prompt to check, not an objection."
+NUDGE="sota-anchor plugin: this request assumes something is unavailable, or proposes building around it. That assumption may be out of date - an existing library, reader, tool or model capability may already cover it. Before building the workaround, the sota-architect skill (or /sota-check) can check it against recent sources. If the limitation turns out to be real, carry on - this is a prompt to check, not an objection."
 
-# Epistemic-stance terms: they describe the SHAPE of a claimed limitation, not
-# any subject matter. Nothing here knows what CAD or genomics are, so the
-# no-topic-dictionary rule the engine follows still holds.
-for phrase in \
-    "cannot" "can't" "unable to" "impossible" "not possible" "unsupported" \
-    "doesn't support" "does not support" "no native" "workaround" "work around" \
-    "fall back" "fallback" "limitation" "manually parse" "by hand"
-do
-    case "$lowered" in
-        *"$phrase"*)
-            printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "UserPromptSubmit",\n    "additionalContext": "%s"\n  }\n}\n' "$NUDGE"
-            exit 0
-            ;;
-    esac
-done
+# Epistemic-stance terms: they describe the SHAPE of a claimed limitation, or of
+# building around one, not any subject matter. Nothing here knows what CAD or
+# genomics are, so the no-topic-dictionary rule the engine follows still holds.
+#
+# "cant" is how the prompt a live session declined to check spelled it. Matched
+# as whole words only, because it also sits inside "significant".
+STANCE="cannot|can't|cant|can not|unable to|impossible|not possible|unsupported"
+STANCE+="|doesn't support|does not support|isn't supported|not supported|no native"
+STANCE+="|no way to|workaround|work around|fall back|fallback|limitation"
+STANCE+="|manually parse|by hand|from scratch|write my own|write our own"
+STANCE+="|roll my own|roll our own|hand-roll|hand roll|reimplement|re-implement"
+STANCE+="|reverse engineer|reverse-engineer|custom parser|custom converter"
+STANCE+="|custom reader|proprietary"
+pattern="(^|[^a-z'])(${STANCE})([^a-z]|$)"
+
+if [[ "$lowered" =~ $pattern ]]; then
+    printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "UserPromptSubmit",\n    "additionalContext": "%s"\n  }\n}\n' "$NUDGE"
+fi
 
 exit 0

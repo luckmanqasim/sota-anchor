@@ -1,46 +1,69 @@
 ---
 name: sota-architect
-description: Use before building any workaround for something a tool "cannot" do - an OCR or parsing stage, a heuristic pipeline, a custom post-processing step, a hand-rolled scheduler. Checks whether the limitation the design routes around still exists, using research and repositories from the last 6-12 months rather than training data. Also use when the user asks whether an approach is still state of the art, or invokes /sota-check.
+description: Use before building around something assumed to be unavailable or impossible - a custom parser, reader or converter for a file format thought to need a vendor SDK, a rewrite from scratch of a library that may already exist, scraping or reverse-engineering because there is supposedly no API, or an OCR, heuristic or post-processing stage around a model limitation. Checks that assumption against recent papers, repositories and package registries rather than training data. Also use when the user asks whether an approach is still state of the art, or invokes /sota-check.
 ---
 
-# Architectural obsolescence arbitration
+# Checking an assumed limitation
 
-Your training data has a cutoff. A limitation you remember as real may have been
-removed by tooling, frontier model capability, or open-source work published
-since. Every hour spent building around a limitation that no longer exists is
-technical debt that was obsolete before it was written.
+Plans often rest on something being unavailable: no library for the job, no
+reader for a format without the vendor's SDK, no API for the data, no model that
+can do the task directly. Training data has a cutoff, and any of those may have
+changed since - through a new open-source implementation, a package, a tool or a
+model capability. Building around a limitation that no longer exists is work that
+was obsolete before it was written.
 
 This skill checks that, and you do the reasoning - there is no second model
 involved. The plugin supplies dated, cited evidence; you judge against it.
 
 ## The one rule
 
-**Never judge obsolescence from memory.** Your recollection of what models and
-tools can do is the thing under suspicion here. Judge only from the evidence the
-tool returns, in either direction: training data can neither establish that a
-limitation has fallen nor that it holds.
+**Never judge from memory.** Recollection of what exists and what tools can do
+is the thing being checked. Judge only from the evidence the tool returns, in
+either direction: training data can neither establish that a limitation has
+fallen nor that it holds.
 
 ## Step 1: invert the proposal
 
-Take the design under review and ask: *what must be hard, impossible, or
-inaccurate for AI or software in this domain for this specific workaround to be
-justified?*
+Take the design under review and ask: *what must be unavailable, impossible or
+impractical for this specific workaround to be justified?* The answer is often
+not about AI at all.
+
+Keep constraints the user states as given. "I can't use ODA" is a constraint - a
+license, a platform, a dependency they cannot add - not a claim to overturn. The
+assumption to check is the one underneath the workaround: usually that nothing
+else already satisfies that constraint.
 
 Write down:
 
 - `domain` - the field this sits in
-- `implicit_limitation` - the capability claim the design depends on being true
+- `implicit_limitation` - the claim the design depends on, stated so that
+  evidence could contradict it
 - `proposed_workaround` - the machinery being built to route around it
 - `domain_query` - keywords for the specific task, in its own field's vocabulary
-- `capability_query` - keywords for the broad, foundational capability that would
-  make the workaround unnecessary, in vocabulary that field may never use
+- `capability_query` - keywords for whatever would make the workaround
+  unnecessary: an existing implementation, library, tool or model capability,
+  in vocabulary that field may never use
 
-Two queries, because they fail differently. "OCR bounding box snapping for pipe
-penetrations" describes the workaround. "MEP penetration extraction construction
-drawings" is the domain query. "Multimodal direct vector coordinate extraction"
-is the capability query - and it is the one that finds a foundational advance
-published without ever naming your domain. A single narrow query misses exactly
-the leaps worth knowing about.
+Lead each query with its most specific term - a file extension, format, product,
+library or protocol name - and put generic words last. Retrieval relaxes a query
+that finds nothing by dropping its last terms first, so the distinctive term is
+the one that should survive.
+
+Two worked examples:
+
+- *"Write a custom binary parser for NWD files, since we can't use ODA to read
+  them."* Limitation: no open-source reader exists for NWD without the vendor's
+  SDK. Workaround: reverse-engineer the format and write a parser from scratch.
+  `domain_query`: "nwd glb conversion". `capability_query`: "nwd reader".
+- *"OCR bounding box snapping for pipe penetrations."* Limitation: models cannot
+  extract vector coordinates from drawings directly. `domain_query`: "MEP
+  penetration extraction construction drawings". `capability_query`:
+  "multimodal vector coordinate extraction".
+
+Two queries, because they fail differently. The domain query finds work that
+names the task; the capability query finds a general advance - a library, a
+reader, a model capability - indexed under vocabulary the task's field never
+uses. A single narrow query misses exactly the leaps worth knowing about.
 
 ## Step 2: retrieve evidence
 
@@ -52,25 +75,28 @@ verify_architecture(pitch="<the design>",
                     capability_query="<capability_query>")
 ```
 
-It returns the evidence *and* the standard of proof, already assembled. Called
-with only a pitch it returns the step-1 inversion prompt instead, so it is safe
-to start there if you skipped ahead.
+It returns the evidence *and* the standard of proof, already assembled: papers
+from arXiv and Hugging Face, repositories from GitHub and packages from npm and
+crates.io, each dated. Called with only a pitch it returns the step-1 inversion
+prompt instead, so it is safe to start there if you skipped ahead.
 
 Pass `months=24` to widen the window when a first pass returns nothing usable.
 
 **Fallback, only if the MCP server is unreachable.** The CLI does the same
-retrieval. It is a fallback because it depends on `sota-anchor` being resolvable,
-which it often is not - the package commonly lives in a project `.venv` rather
-than on the system `PATH`, and calling it blind produces
-`exit code 127: command not found`. Resolve it before calling it:
+retrieval from the plugin's own checkout. It is a fallback because it has to be
+resolved first: a bare `sota-anchor` usually fails with
+`exit code 127: command not found`, since a plugin install puts nothing on
+`PATH`. Use the first of these that works:
 
 ```bash
-# Use the first of these that exists; do not just call `sota-anchor`.
-./.venv/bin/sota-anchor --version          # POSIX project venv
-./.venv/Scripts/sota-anchor.exe --version  # Windows project venv
-uv run --quiet sota-anchor --version       # uv-managed project
-command -v sota-anchor                     # already on PATH
+uv run --quiet --project "${CLAUDE_PLUGIN_ROOT}" sota-anchor --version
+"${CLAUDE_PLUGIN_ROOT}/.venv/bin/sota-anchor" --version          # POSIX
+"${CLAUDE_PLUGIN_ROOT}/.venv/Scripts/sota-anchor.exe" --version  # Windows
+command -v sota-anchor                                          # installed globally
 ```
+
+The `--project` flag matters: without it uv resolves against the user's project
+instead of the plugin, finds no `sota-anchor` there, and creates a `.venv` in it.
 
 Then run retrieval with whichever resolved:
 
@@ -92,23 +118,30 @@ Apply the standard of proof the tool returns:
 
 1. **Evidence-only.** Judge from the retrieved evidence and nothing else.
 2. **Default baseline.** The assumption stands unless the evidence explicitly
-   documents that a modern primitive, tool or method has superseded it.
-3. **Threshold.** Prefer evidence reporting benchmarked or demonstrated results
-   over evidence that merely proposes an approach. Unbenchmarked or incomplete
-   evidence does not meet the threshold, and the assumption stands.
+   documents that a modern primitive, tool, implementation or method has
+   superseded it.
+3. **Threshold, by kind of claim.**
+   - *Existence* - "no library, reader or tool exists for this": a published
+     repository or package that states it does the task documents that one
+     exists. Report its age and activity too; existence is not maturity.
+   - *Performance* - "models cannot do this accurately": prefer benchmarked or
+     demonstrated results over work that merely proposes an approach.
+
+   Evidence that is absent, incomplete or off-target meets neither threshold,
+   and the assumption stands.
 
 If the evidence documents supersession, report exactly this:
 
 ```
 [SOTA ARBITER PARADIGM SHIFT]
 - Assertion (A): Do NOT implement [the workaround].
-- Reason (R): [the native primitive or tool that supersedes it, naming which
-  evidence item says so].
+- Reason (R): [the native primitive, tool or implementation that supersedes it,
+  naming which evidence item says so].
 - Linkage: Because (R) is true, (A) is obsolete technical debt.
 ```
 
 Name the evidence item in the Reason. An assertion the reader cannot trace back
-to a paper or repository is indistinguishable from a guess.
+to a paper, repository or package is indistinguishable from a guess.
 
 Otherwise state that the assumption stands on this evidence, say what the
 evidence does and does not document, and name what would have to be shown to
@@ -128,5 +161,7 @@ Offer to widen the window or search manually, and proceed with the original plan
 ## Scope
 
 The engine is domain-agnostic: it holds no list of topics, tools or disciplines,
-so it works the same on a technical-drawing pipeline, a genomics parser or a
-compiler pass. Do not narrow it to fields you recognise.
+so it works the same on a drawing pipeline, a file-format converter, a genomics
+parser or a compiler pass. Do not narrow it to AI model capabilities, or to
+fields you recognise: any plan that exists because something is assumed to be
+missing is in scope.

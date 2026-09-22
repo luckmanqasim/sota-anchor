@@ -69,25 +69,37 @@ class Payload:
 
 INVERSION_TEMPLATE = """[SOTA ARBITER - STEP 1 OF 2: ASSUMPTION INVERSION]
 
-You are about to verify whether a technical proposal rests on a limitation that
-no longer exists. Do not answer that question yet - you have no evidence, and
-your own training data is the thing under suspicion.
+This step identifies what the proposal assumes, so that step 2 can check it
+against retrieved, dated sources. No verdict is asked for yet: nothing has been
+retrieved, and recall from training data is what the check is designed not to
+rely on.
 
 Proposal under review:
 "{pitch}"
 
-First, invert it. Identify the engineering assumption the proposal takes for
-granted by answering: what must be hard, impossible, or inaccurate for AI or
-software in this domain for this specific workaround or design to be justified?
+Invert it. What must be unavailable, impossible or impractical for this specific
+workaround or design to be justified? The answer is often not about AI at all:
+no library or reader exists for a file format, only a vendor SDK can open it, an
+API does not expose the data, no model can do the task directly.
+
+Keep constraints the proposal states as given - a license that cannot be used, a
+dependency that cannot be added. The assumption to check is the one underneath
+the workaround: usually that nothing else already satisfies those constraints.
 
 Produce these fields:
 
 - domain: the field this sits in
-- implicit_limitation: the capability claim the design depends on being true
+- implicit_limitation: the claim the design depends on being true, stated so
+  that evidence could contradict it
 - proposed_workaround: the machinery being built to route around it
 - domain_query: keywords for the specific task, in this domain's own vocabulary
-- capability_query: keywords for the broad, foundational capability that would
-  make the workaround unnecessary, in vocabulary the task's own field may not use
+- capability_query: keywords for whatever would make the workaround unnecessary
+  - an existing implementation, library, tool or model capability - in
+  vocabulary the task's own field may not use
+
+Lead each query with its most specific term - a file extension, format, product,
+library or protocol name - and put generic words last. Retrieval relaxes a query
+that finds nothing by dropping its last terms first.
 
 Two queries, not one, because they fail differently. A narrow domain query
 misses a general advance indexed under other terminology; a broad capability
@@ -111,21 +123,29 @@ Queries used: {queries}
 Standard of proof:
 
 1. Evidence-only invariant. Judge from the evidence above and nothing else.
-   Your training data is not admissible here, in either direction: it can
-   neither establish that the limitation has fallen nor that it holds.
+   Recall from training data is not admissible here, in either direction: it
+   can neither establish that the limitation has fallen nor that it holds.
 2. Default baseline. The assumption stands unless the evidence above explicitly
-   documents that a modern primitive, tool or method has superseded it.
-3. Threshold. Prefer evidence that reports benchmarked or demonstrated results
-   over evidence that merely proposes or describes an approach. Absent,
-   incomplete or unbenchmarked evidence does not meet the threshold, and the
-   assumption stands by rule 2.
+   documents that a modern primitive, tool, implementation or method has
+   superseded it.
+3. Threshold, which depends on the kind of claim:
+   - Existence ("no library, reader or tool exists for this"): a published
+     repository or package whose description states that it does the task
+     documents that one exists. Report its age and activity as well, because
+     existence is not maturity.
+   - Performance ("models cannot do this accurately"): prefer evidence that
+     reports benchmarked or demonstrated results over evidence that merely
+     proposes or describes an approach.
+   Evidence that is absent, incomplete or off-target meets neither threshold,
+   and neither does an unbenchmarked result offered for a performance claim.
+   In those cases the assumption stands by rule 2.
 
 If the evidence documents supersession, reply with exactly this block, filled in:
 
 {header}
 - Assertion (A): Do NOT implement [the workaround].
-- Reason (R): [the modern native primitive or tool that supersedes it, naming
-  the evidence item it comes from].
+- Reason (R): [the modern native primitive, tool or implementation that
+  supersedes it, naming the evidence item it comes from].
 - Linkage: Because (R) is true, (A) is obsolete technical debt.
 
 Otherwise state that the assumption stands on this evidence, say what the
