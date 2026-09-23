@@ -38,7 +38,8 @@ VERIFY_DESCRIPTION = (
     "no API for the data, or a model that cannot do the task. Call it before "
     "writing a custom parser, converter or reader, rewriting something from "
     "scratch, or adding a workaround, heuristic pipeline or post-processing stage, "
-    "in any domain. Call it with just the pitch first: it returns an inversion "
+    "in any domain - and before telling a user that no tool or library exists "
+    "for something. Call it with just the pitch first: it returns an inversion "
     "prompt asking what would have to be unavailable for the plan to be justified. "
     "Answer that, then call again with domain_query (the task in its own "
     "vocabulary) and capability_query (whatever would make the workaround "
@@ -91,7 +92,8 @@ def build_server(
             "or config. Call verify_architecture before building around something "
             "assumed to be unavailable - a custom parser or converter for a format "
             "thought to need vendor tooling, a from-scratch rewrite, or a "
-            "workaround for a model limitation."
+            "workaround for a model limitation - and before advising that no tool "
+            "exists for it."
         ),
     )
 
@@ -186,10 +188,11 @@ def build_server(
                 "Before building around something assumed to be unavailable - a custom",
                 "parser or converter for a format thought to need vendor tooling, a",
                 "rewrite of an existing library from scratch, an OCR or heuristic stage",
-                "around a model limitation - call the `verify_architecture` tool with",
-                "the design in question. It searches recent papers, repositories and",
-                "package registries, and reports whether an existing solution already",
-                "replaces what was about to be built.",
+                "around a model limitation - or before advising that no tool exists for",
+                "it, call the `verify_architecture` tool with the design in question.",
+                "It searches recent papers, repositories and package registries, and",
+                "reports whether an existing solution already replaces what was about",
+                "to be built.",
                 "",
                 "Read the `models://active` resource before writing a model identifier",
                 "into code, config or a .env file.",

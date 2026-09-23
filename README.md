@@ -269,6 +269,13 @@ its query's terms to count as evidence.
 - **Retrieval is bounded in time.** All sources share a 60-second deadline and at
   most four requests in flight. A source still running at the deadline is cut
   off, keeps what it found, and says so in the errors.
+- **Whether the check runs is the host model's call.** It matches your request
+  against the skill's description. Measured headless on the NWD prompts, a
+  description that only said "use before building around…" never fired on
+  "convert some nwds to glbs, write a custom parser": the model advised against
+  the parser from memory instead, and advice was not covered. Naming the advice
+  path fixed it (0/3 to 3/3, the check first every time) without firing on
+  ordinary requests. The opt-in prompt hook, tested alone, did not help.
 - **Verdict quality is bounded by the evidence.** A paper's existence is not
   proof that a production-ready primitive exists, and a repository's is not
   proof that it works. Treat an obsolescence verdict as a prompt to go look, not

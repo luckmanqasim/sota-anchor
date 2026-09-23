@@ -59,6 +59,46 @@ class TestSkillTrigger:
         assert "model" in skill_description()
 
 
+class TestAdvicePath:
+    """The check has to run before *advice*, not only before building.
+
+    Measured headless with the plugin loaded, three trials each. "i need to read
+    some nwds, write a custom parer for it" checked first every time. "i need to
+    convert some nwds to glbs, write a custom parer for it" never did: the model
+    advised against the parser from memory -- "Autodesk has never documented
+    NWD... nothing open-source reads it" -- which is the stale claim itself. It
+    was not building anything, so a trigger worded "use before building around"
+    did not apply. In the live session that first answer then anchored the next
+    two turns. Naming the advice path took the convert prompt from 0/3 to 3/3,
+    with the check as the first action, while two ordinary prompts stayed 0/2.
+    """
+
+    def test_the_skill_runs_before_advising_against_building(self):
+        assert "advise against" in skill_description()
+
+    def test_the_skill_names_the_claims_training_data_gets_wrong(self):
+        description = skill_description()
+        assert "no open-source tool exists" in description
+        assert "only the vendor" in description
+
+    def test_the_session_block_names_the_advice_path(self, raw_models):
+        from sota_anchor.catalog import build_catalog
+        from sota_anchor.seed import BOOTSTRAP_BLOCK, render_seed
+
+        from .conftest import NOW
+
+        for block in (render_seed(build_catalog(raw_models, now=NOW)), BOOTSTRAP_BLOCK):
+            assert "advising that no open-source tool exists" in flat(block)
+
+    def test_the_mcp_instructions_name_the_advice_path(self):
+        from sota_anchor.server import build_server
+
+        assert "advising that no tool exists" in flat(build_server().instructions or "")
+
+    def test_the_tool_description_names_the_advice_path(self):
+        assert "no tool or library exists" in flat(VERIFY_DESCRIPTION)
+
+
 class TestSkillBody:
     def test_inverts_to_what_must_be_unavailable(self):
         assert "unavailable" in skill_body()

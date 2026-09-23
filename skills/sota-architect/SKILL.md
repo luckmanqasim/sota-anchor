@@ -1,6 +1,6 @@
 ---
 name: sota-architect
-description: Use before building around something assumed to be unavailable or impossible - a custom parser, reader or converter for a file format thought to need a vendor SDK, a rewrite from scratch of a library that may already exist, scraping or reverse-engineering because there is supposedly no API, or an OCR, heuristic or post-processing stage around a model limitation. Checks that assumption against recent papers, repositories and package registries rather than training data. Also use when the user asks whether an approach is still state of the art, or invokes /sota-check.
+description: Use before answering any request that rests on something being unavailable - a closed or undocumented file format, a vendor SDK or tool the user cannot use, a missing API or library - whether the plan is to build around it (a custom parser, reader or converter, a rewrite from scratch, reverse-engineering, an OCR or heuristic stage around a model limitation) or to advise against building it. Run it before telling the user that no open-source tool exists, that only the vendor's software can read a format, or what the realistic options are; those are exactly the claims training data gets wrong, and this checks them against recent repositories, packages and papers. Also use when the user asks whether an approach is still state of the art, or invokes /sota-check.
 ---
 
 # Checking an assumed limitation
@@ -11,6 +11,10 @@ can do the task directly. Training data has a cutoff, and any of those may have
 changed since - through a new open-source implementation, a package, a tool or a
 model capability. Building around a limitation that no longer exists is work that
 was obsolete before it was written.
+
+Advice is covered too. Telling the user that nothing open-source reads a format,
+or that the vendor's software is the only route, is a claim about what exists
+today - the claim this skill checks - not an answer to give from memory.
 
 This skill checks that, and you do the reasoning - there is no second model
 involved. The plugin supplies dated, cited evidence; you judge against it.

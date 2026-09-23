@@ -14,7 +14,7 @@ set -uo pipefail
 payload="$(cat 2>/dev/null)" || exit 0
 lowered="$(printf '%s' "$payload" | tr '[:upper:]' '[:lower:]')"
 
-NUDGE="sota-anchor plugin: this request assumes something is unavailable, or proposes building around it. That assumption may be out of date - an existing library, reader, tool or model capability may already cover it. Before building the workaround, the sota-architect skill (or /sota-check) can check it against recent sources. If the limitation turns out to be real, carry on - this is a prompt to check, not an objection."
+NUDGE="sota-anchor plugin: this request assumes something is unavailable, or proposes building around it. That assumption may be out of date - an existing library, reader, tool or model capability may already cover it. Before building the workaround, or advising that no such tool exists, the sota-architect skill (or /sota-check) can check it against recent sources. If the limitation turns out to be real, carry on - this is a prompt to check, not an objection."
 
 # Epistemic-stance terms: they describe the SHAPE of a claimed limitation, or of
 # building around one, not any subject matter. Nothing here knows what CAD or

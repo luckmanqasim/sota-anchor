@@ -571,6 +571,17 @@ class TestHookExecution:
         # "cant" sits inside "significant"; substring matching would fire here.
         assert not self._nudged("this is a significant refactor of the applicant table")
 
+    def test_prompt_hook_nudge_names_the_advice_path(self):
+        # Measured: the nudge fired on "i cant use oda" and the host still
+        # advised from memory, because the nudge only spoke of building.
+        result = self._run(
+            "user-prompt-submit",
+            env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
+            stdin=json.dumps({"prompt": "this cannot be done, add a workaround"}),
+        )
+        nudge = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "advising that no such tool exists" in nudge
+
     def test_prompt_hook_nudge_claims_no_authority(self):
         import re
 
