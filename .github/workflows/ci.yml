@@ -20,34 +20,52 @@ jobs:
         # break there, and they were all written against it.
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12"]
+    defaults:
+      run:
+        # One shell on both platforms. These steps were run as written under
+        # bash on Ubuntu 24.04 and under Git Bash on Windows, for both versions.
+        shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Install uv and Python ${{ matrix.python-version }}
+        # python-version sets UV_PYTHON for every later step, so each job builds
+        # its environment on the matrix interpreter. The previous setup ran
+        # `uv python install` and then `uv pip install --system`, but --system
+        # ignores that install and takes the first python on PATH. On Ubuntu that
+        # is /usr's 3.12, which PEP 668 marks externally managed, so both Ubuntu
+        # jobs failed at install -- and no job ever actually ran on 3.11.
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install the project
-        run: uv pip install --system -e ".[dev]" ruff
+        # A project virtualenv, never the system interpreter.
+        run: uv sync --extra dev
+
+      - name: Check the interpreter is the matrix version
+        # The failure above was silent on Windows: the jobs passed on whatever
+        # Python the runner had. This makes a mismatch fail loudly instead.
+        run: |
+          actual=$(uv run python -c "import sys; print('%d.%d' % sys.version_info[:2])")
+          echo "Python $actual"
+          test "$actual" = "${{ matrix.python-version }}"
 
       - name: Lint
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Test
         # The suite is entirely offline -- HTTP goes through httpx.MockTransport
         # and the LLM through an injected fake -- so this needs no secrets and
         # cannot be flaked by a third-party API.
-        run: python -m pytest -q
+        run: uv run python -m pytest -q
 
   plugin:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate plugin manifests
         # Parses .claude-plugin/plugin.json, hooks/hooks.json and .mcp.json, and
         # checks that the scripts hooks.json runs exist and are executable:
