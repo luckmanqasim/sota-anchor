@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="sota-anchor logo: the chart symbol for an anchorage">
+
+<rect x="3" y="3" width="114" height="114" fill="#0E2233"/>
+<rect x="3.5" y="3.5" width="113" height="113" fill="none" stroke="#DCE8F0" stroke-width="1.2"/>
+<rect x="8.5" y="8.5" width="103" height="103" fill="none" stroke="#DCE8F0" stroke-width="0.6"/>
+<rect x="3.5" y="3.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="3.5" y="111.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="35.8" y="3.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="35.8" y="111.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="68.1" y="3.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="68.1" y="111.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="100.4" y="3.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="100.4" y="111.5" width="16.1" height="5.0" fill="#DCE8F0"/>
+<rect x="3.5" y="29.1" width="5.0" height="20.6" fill="#DCE8F0"/>
+<rect x="111.5" y="29.1" width="5.0" height="20.6" fill="#DCE8F0"/>
+<rect x="3.5" y="70.3" width="5.0" height="20.6" fill="#DCE8F0"/>
+<rect x="111.5" y="70.3" width="5.0" height="20.6" fill="#DCE8F0"/>
+<circle cx="60" cy="40.5" r="6.5" fill="none" stroke="#F25AAE" stroke-width="4.8"/>
+<path d="M60,47 L60,89.2" stroke="#F25AAE" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M46.2,54.2 L73.8,54.2" stroke="#F25AAE" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M36.2,71.8 Q38.8,89.2 60,89.2 Q81.2,89.2 83.8,71.8" stroke="#F25AAE" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M36.2,66 L31,76.5 L41.5,76.5 Z" fill="#F25AAE"/>
+<path d="M83.8,66 L89,76.5 L78.5,76.5 Z" fill="#F25AAE"/>
+</svg>
