@@ -1,7 +1,7 @@
 [project]
 name = "sota-anchor"
 version = "0.1.0"
-description = "Breaks epistemic inertia in AI coding agents: dynamic model-catalog anchoring plus a 3-stage assumption-diffing engine backed by temporal-decay retrieval."
+description = "Checks what already exists before your coding agent builds it from scratch: a search of recent papers, repositories and packages, as an MCP server and Claude Code plugin."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

@@ -1,6 +1,6 @@
 {
   "name": "sota-anchor",
-  "description": "Stops stale model knowledge from reaching your code. Seeds each session with the live frontier model lineup and the superseded identifiers not to reach for, and verifies architectural assumptions against recent research before you build a workaround for a limitation that no longer exists. Needs no LLM API key: this session does the reasoning, the plugin does the retrieval.",
+  "description": "Checks what already exists before your coding agent builds it from scratch. When a plan assumes something is unavailable - a library, a reader for a format only the vendor's software opens, a model capability - it searches the last year of papers, repositories and packages first. Also adds a dated list of current model API IDs to each session. Needs no LLM API key: this session does the reasoning, the plugin does the retrieval.",
   "version": "0.1.0",
   "author": {
     "name": "Luckman Qasim",
