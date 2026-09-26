@@ -146,7 +146,10 @@ In Claude Code:
 /plugin install sota-anchor@sota-anchor
 ```
 
-Then start a new session. To try it for one session without installing:
+Then start a new session. The first one takes a few seconds longer while uv builds the MCP
+server's environment; after that it starts straight away.
+
+To try it for one session without installing:
 
 ```bash
 git clone https://github.com/luckmanqasim/sota-anchor
