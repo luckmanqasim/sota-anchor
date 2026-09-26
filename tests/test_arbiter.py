@@ -11,9 +11,9 @@ from sota_anchor.arbiter import (
     Inversion,
     Report,
     Verdict,
+    check_what_exists,
     judge,
     render_paradigm_update,
-    verify_architecture,
 )
 from sota_anchor.retriever import Evidence, EvidenceSet
 
@@ -178,7 +178,7 @@ class TestVerifyArchitecture:
             self.queried = query
             return evidence
 
-        return await verify_architecture(
+        return await check_what_exists(
             "Build an OCR snapping pipeline for MEP penetrations.",
             llm=llm,
             gather=gather,
@@ -243,7 +243,7 @@ class TestVerifyArchitecture:
             captured.update(kwargs)
             return evidence_set("X")
 
-        await verify_architecture(
+        await check_what_exists(
             "a proposal", llm=FakeLLM(VALID, STILL_VALID), gather=gather, now=NOW, months=6
         )
         assert captured["months"] == 6
@@ -287,7 +287,7 @@ class TestKeyedMultiVector:
             captured["queries"] = queries
             return evidence_set("X")
 
-        await verify_architecture(
+        await check_what_exists(
             "a proposal", llm=FakeLLM(VALID, STILL_VALID), gather=gather, now=NOW
         )
         assert VALID["domain_query"] in captured["queries"]

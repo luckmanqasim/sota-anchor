@@ -13,8 +13,8 @@ from .arbiter import (
     ArbiterError,
     LLMClient,
     LLMUnavailable,
+    check_what_exists,
     resolve_settings,
-    verify_architecture,
 )
 from .catalog import (
     DEFAULT_MAX_PER_PROVIDER,
@@ -203,7 +203,7 @@ def check(
 
     try:
         report = asyncio.run(
-            verify_architecture(proposal, llm=llm, gather=gather_evidence, months=months)
+            check_what_exists(proposal, llm=llm, gather=gather_evidence, months=months)
         )
     except (ArbiterError, CatalogUnavailable) as error:
         raise click.ClickException(str(error)) from error
@@ -230,7 +230,7 @@ def check(
 def evidence(query: str, months: int, as_json: bool) -> None:
     """Retrieve recent evidence for QUERY. Deterministic, and needs no API key.
 
-    This is what the sota-architect skill calls: the plugin does the retrieval,
+    This is what the check-what-exists skill calls: the plugin does the retrieval,
     the host agent does the judging.
     """
     result = asyncio.run(gather_evidence(query, months=months))

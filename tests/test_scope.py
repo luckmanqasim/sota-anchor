@@ -2,7 +2,7 @@
 
 A live session was asked to "convert some nwds to glbs, write a custom parer
 for it since i cant use oda to read the files". It declined to run the check,
-reasoning that verify_architecture only applies to AI model capabilities. But
+reasoning that check_what_exists only applies to AI model capabilities. But
 the assumption under that plan -- no open-source reader exists for the format
 without the vendor's SDK -- is exactly the kind this tool exists to test: an
 independent reader for it had been published on GitHub two weeks earlier.
@@ -18,13 +18,13 @@ from pathlib import Path
 
 from sota_anchor.arbiter import judge
 from sota_anchor.protocol import INVERSION_TEMPLATE, JUDGMENT_TEMPLATE
-from sota_anchor.server import VERIFY_DESCRIPTION
+from sota_anchor.server import CHECK_DESCRIPTION
 
 from .test_arbiter import INVERSION, STILL_VALID, evidence_set
 from .test_inversion import VALID, FakeLLM
 
 REPO = Path(__file__).resolve().parent.parent
-SKILL = REPO / "skills" / "sota-architect" / "SKILL.md"
+SKILL = REPO / "skills" / "check-what-exists" / "SKILL.md"
 
 
 def flat(text: str) -> str:
@@ -96,7 +96,7 @@ class TestAdvicePath:
         assert "advising that no tool exists" in flat(build_server().instructions or "")
 
     def test_the_tool_description_names_the_advice_path(self):
-        assert "no tool or library exists" in flat(VERIFY_DESCRIPTION)
+        assert "no tool or library exists" in flat(CHECK_DESCRIPTION)
 
 
 class TestSkillBody:
@@ -117,13 +117,13 @@ class TestSkillBody:
 
 class TestToolDescription:
     def test_names_custom_parsers(self):
-        assert "parser" in flat(VERIFY_DESCRIPTION)
+        assert "parser" in flat(CHECK_DESCRIPTION)
 
     def test_says_package_registries_are_searched(self):
-        assert "package registries" in flat(VERIFY_DESCRIPTION)
+        assert "package registries" in flat(CHECK_DESCRIPTION)
 
     def test_asks_for_the_most_specific_term_first(self):
-        assert "most specific term" in flat(VERIFY_DESCRIPTION)
+        assert "most specific term" in flat(CHECK_DESCRIPTION)
 
 
 class TestInversionTemplate:

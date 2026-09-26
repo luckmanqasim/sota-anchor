@@ -96,9 +96,9 @@ What you get:
   claim about which model is running and no claim to outrank the model's own
   knowledge. An earlier wording did both, and a host model rightly refused it as
   a prompt injection.
-- **A `sota-architect` skill** that runs the verification protocol.
+- **A `check-what-exists` skill** that runs the verification protocol.
 - **`/sota-check <design>`** and **`/sota-sync`** slash commands.
-- **An MCP server** exposing `models://active` and `verify_architecture`.
+- **An MCP server** exposing `models://active` and `check_what_exists`.
 - **An optional `UserPromptSubmit` hook**, inert unless you set
   `SOTA_ANCHOR_PROMPT_HOOK=1`, which nudges toward verification when a prompt
   asserts that something cannot be done. It only ever adds context — it can
@@ -106,7 +106,7 @@ What you get:
 
 ### Zero-key verification
 
-`verify_architecture` is two-phase. Call it with a pitch and it returns an
+`check_what_exists` is two-phase. Call it with a pitch and it returns an
 *inversion prompt*: what would have to be unavailable for this design to be
 justified? Answer that, call again with the `domain_query` and
 `capability_query` you produced — each led by its most specific term, since
@@ -163,7 +163,7 @@ read "nobody judged this" as "this is fine".
 
 Nothing here needs an API key. `sync`, `seed` and `evidence` never did — the
 registry and every default evidence source are public — and `check` and
-`verify_architecture` fall back to the host-driven protocol instead of failing.
+`check_what_exists` fall back to the host-driven protocol instead of failing.
 A key is only for a **headless** verdict, where no agent is present to answer
 the protocol:
 
@@ -205,7 +205,7 @@ something else:
 ```
 
 Exposes a resource `models://active` (current endpoints and the superseded map,
-as JSON), a tool `verify_architecture(pitch, domain_query?, capability_query?,
+as JSON), a tool `check_what_exists(pitch, domain_query?, capability_query?,
 months?)`, and a prompt `init_project`.
 
 The judging payload states an objective standard rather than a rhetorical one:

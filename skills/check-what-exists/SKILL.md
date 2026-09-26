@@ -1,5 +1,5 @@
 ---
-name: sota-architect
+name: check-what-exists
 description: Use before answering any request that rests on something being unavailable - a closed or undocumented file format, a vendor SDK or tool the user cannot use, a missing API or library - whether the plan is to build around it (a custom parser, reader or converter, a rewrite from scratch, reverse-engineering, an OCR or heuristic stage around a model limitation) or to advise against building it. Run it before telling the user that no open-source tool exists, that only the vendor's software can read a format, or what the realistic options are; those are exactly the claims training data gets wrong, and this checks them against recent repositories, packages and papers. Also use when the user asks whether an approach is still state of the art, or invokes /sota-check.
 ---
 
@@ -74,9 +74,9 @@ uses. A single narrow query misses exactly the leaps worth knowing about.
 **Use the MCP tool. It is the primary path:**
 
 ```
-verify_architecture(pitch="<the design>",
-                    domain_query="<domain_query>",
-                    capability_query="<capability_query>")
+check_what_exists(pitch="<the design>",
+                  domain_query="<domain_query>",
+                  capability_query="<capability_query>")
 ```
 
 It returns the evidence *and* the standard of proof, already assembled: papers

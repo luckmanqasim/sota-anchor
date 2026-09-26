@@ -52,12 +52,12 @@ WRAP_WIDTH = 76
 
 #: Closes both blocks. Written out once so the bootstrap and the rendered block
 #: cannot describe the check differently.
-VERIFY_PARAGRAPH = (
+CHECK_PARAGRAPH = (
     "Before building around something assumed to be unavailable - a custom "
     "parser or converter for a format thought to need vendor tooling, a rewrite "
     "of an existing library from scratch, an OCR or heuristic stage around a "
     "model limitation - or before advising that no open-source tool exists for "
-    'it, run `/sota-check "<the design>"` or the verify_architecture MCP tool. '
+    'it, run `/sota-check "<the design>"` or the check_what_exists MCP tool. '
     "It searches recent papers, repositories and package registries for an "
     "existing solution first."
 )
@@ -79,7 +79,7 @@ BOOTSTRAP_BLOCK = "\n".join(
             "current list."
         ),
         "",
-        *_paragraph(VERIFY_PARAGRAPH),
+        *_paragraph(CHECK_PARAGRAPH),
     ]
 ) + "\n"
 
@@ -219,7 +219,7 @@ def render_seed(
             "",
         ]
 
-    lines += _paragraph(VERIFY_PARAGRAPH)
+    lines += _paragraph(CHECK_PARAGRAPH)
     return "\n".join(lines) + "\n"
 
 

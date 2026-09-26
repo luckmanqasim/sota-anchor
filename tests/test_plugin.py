@@ -18,7 +18,9 @@ REPO = Path(__file__).resolve().parent.parent
 PLUGIN_MANIFEST = REPO / ".claude-plugin" / "plugin.json"
 HOOKS_MANIFEST = REPO / "hooks" / "hooks.json"
 MCP_MANIFEST = REPO / ".mcp.json"
-SKILL = REPO / "skills" / "sota-architect" / "SKILL.md"
+#: The server is named for its job: Claude Code shows it as plugin:sota-anchor:check.
+MCP_SERVER = "check"
+SKILL = REPO / "skills" / "check-what-exists" / "SKILL.md"
 COMMANDS = REPO / "commands"
 
 
@@ -117,14 +119,14 @@ class TestMcpManifest:
         assert MCP_MANIFEST.is_file()
 
     def test_declares_the_server_under_mcp_servers(self):
-        assert "sota-anchor" in load(MCP_MANIFEST)["mcpServers"]
+        assert MCP_SERVER in load(MCP_MANIFEST)["mcpServers"]
 
     def test_runs_the_stdio_serve_command(self):
-        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         assert "serve" in server["args"]
 
     def test_requires_no_api_key_to_start(self):
-        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         env = server.get("env") or {}
         assert not [key for key in env if "API_KEY" in key and env[key]]
 
@@ -533,7 +535,7 @@ class TestHookExecution:
                            stdin='{"prompt": "The model cannot read vector data, add a workaround"}')
         payload = json.loads(result.stdout)
         assert payload["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
-        assert "sota-architect" in payload["hookSpecificOutput"]["additionalContext"]
+        assert "check-what-exists" in payload["hookSpecificOutput"]["additionalContext"]
 
     def test_prompt_hook_stays_quiet_on_an_ordinary_prompt(self):
         result = self._run("user-prompt-submit", env={"SOTA_ANCHOR_PROMPT_HOOK": "1"},
@@ -609,11 +611,11 @@ class TestMcpPortability:
     """
 
     def test_server_runs_from_the_plugin_directory(self):
-        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         assert "${CLAUDE_PLUGIN_ROOT}" in " ".join(server["args"])
 
     def test_server_does_not_assume_the_cli_is_on_path(self):
-        server = load(MCP_MANIFEST)["mcpServers"]["sota-anchor"]
+        server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         assert server["command"] != "sota-anchor"
 
 
@@ -645,11 +647,11 @@ class TestSkillToolPriority:
     def test_names_the_mcp_tool_as_the_primary_path(self):
         body = self._body()
         primary = body.index("primary path")
-        assert "verify_architecture" in body[:primary + 200]
+        assert "check_what_exists" in body[:primary + 200]
 
     def test_mcp_appears_before_the_cli_fallback(self):
         body = self._body()
-        assert body.index("verify_architecture(") < body.index("evidence --query")
+        assert body.index("check_what_exists(") < body.index("evidence --query")
 
     def test_labels_the_cli_as_a_fallback(self):
         assert "Fallback" in self._body()
@@ -678,8 +680,8 @@ class TestSkillToolPriority:
 
     def test_check_command_follows_the_skill_tool_order(self):
         body = (COMMANDS / "sota-check.md").read_text(encoding="utf-8")
-        assert "sota-architect" in body
-        assert "verify_architecture" in body
+        assert "check-what-exists" in body
+        assert "check_what_exists" in body
         assert "sota-anchor evidence --query" not in body
 
     def test_fallback_checks_the_system_path_too(self):

@@ -33,15 +33,15 @@ class TestSurface:
     async def test_server_is_named_for_the_project(self, server):
         assert server.name == "sota-anchor"
 
-    async def test_exposes_the_verify_architecture_tool(self, server):
-        assert "verify_architecture" in {tool.name for tool in await server.list_tools()}
+    async def test_exposes_the_check_what_exists_tool(self, server):
+        assert "check_what_exists" in {tool.name for tool in await server.list_tools()}
 
     async def test_tool_takes_a_pitch_argument(self, server):
-        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
         assert "pitch" in (tool.input_schema or {}).get("properties", {})
 
     async def test_tool_is_described_so_an_agent_knows_when_to_call_it(self, server):
-        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
         assert tool.description and len(tool.description) > 40
 
     async def test_exposes_the_active_models_resource(self, server):
@@ -116,10 +116,10 @@ class TestInitProjectPrompt:
         body = "\n".join(getattr(m.content, "text", "") for m in result.messages)
         assert "anthropic/claude-opus-5" in body
 
-    async def test_tells_the_agent_to_call_verify_architecture(self, server):
+    async def test_tells_the_agent_to_call_check_what_exists(self, server):
         result = await server.get_prompt("init_project")
         body = "\n".join(getattr(m.content, "text", "") for m in result.messages)
-        assert "verify_architecture" in body
+        assert "check_what_exists" in body
 
 
 class TestVerifyArchitectureTool:
@@ -148,31 +148,31 @@ class TestVerifyArchitectureTool:
 
     async def test_returns_the_paradigm_update_for_an_obsolete_pitch(self, wired):
         server, _ = wired
-        result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        result = await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert "[SOTA ARBITER PARADIGM UPDATE]" in text_of(result)
 
     async def test_confirms_a_pitch_whose_limitation_still_holds(self, wired):
         server, state = wired
         state["verdict"] = STILL_VALID
-        result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        result = await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert "[SOTA ARBITER PARADIGM UPDATE]" not in text_of(result)
 
     async def test_retrieves_using_the_inverted_query(self, wired):
         server, state = wired
-        await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert VALID["domain_query"] in state["queried"]
         assert VALID["capability_query"] in state["queried"]
 
     async def test_no_evidence_never_yields_an_obsolescence_claim(self, wired):
         server, state = wired
         state["evidence"] = EvidenceSet()
-        result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        result = await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert "[SOTA ARBITER PARADIGM UPDATE]" not in text_of(result)
 
 
     async def test_an_empty_pitch_is_reported_not_raised(self, wired):
         server, _ = wired
-        result = await server.call_tool("verify_architecture", {"pitch": "   "})
+        result = await server.call_tool("check_what_exists", {"pitch": "   "})
         assert text_of(result).strip()
 
 
@@ -208,25 +208,25 @@ class TestTwoPhaseVerifyArchitecture:
 
     async def test_tool_accepts_an_optional_verification_query(self, keyless):
         server, _ = keyless
-        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
         properties = (tool.input_schema or {}).get("properties", {})
         assert "domain_query" in properties
         assert "domain_query" not in (tool.input_schema or {}).get("required", [])
 
     async def test_without_a_query_it_returns_the_inversion_prompt(self, keyless):
         server, _ = keyless
-        result = await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        result = await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert "ASSUMPTION INVERSION" in text_of(result)
 
     async def test_without_a_query_it_does_not_retrieve(self, keyless):
         server, state = keyless
-        await server.call_tool("verify_architecture", {"pitch": "OCR snapping pipeline"})
+        await server.call_tool("check_what_exists", {"pitch": "OCR snapping pipeline"})
         assert "queried" not in state
 
     async def test_with_a_query_it_returns_the_judging_protocol(self, keyless):
         server, state = keyless
         result = await server.call_tool(
-            "verify_architecture",
+            "check_what_exists",
             {"pitch": "OCR snapping pipeline", "domain_query": "vector polygon extraction"},
         )
         body = text_of(result)
@@ -238,7 +238,7 @@ class TestTwoPhaseVerifyArchitecture:
         server, state = keyless
         state["evidence"] = EvidenceSet()
         result = await server.call_tool(
-            "verify_architecture",
+            "check_what_exists",
             {"pitch": "OCR snapping pipeline", "domain_query": "some query"},
         )
         body = text_of(result)
@@ -248,12 +248,12 @@ class TestTwoPhaseVerifyArchitecture:
     async def test_no_api_key_is_never_mentioned_as_an_obstacle(self, keyless):
         # Needing no key is the point; the tool must not report its absence as a fault.
         server, _ = keyless
-        result = await server.call_tool("verify_architecture", {"pitch": "a pitch"})
+        result = await server.call_tool("check_what_exists", {"pitch": "a pitch"})
         assert "API key" not in text_of(result)
 
     async def test_an_empty_pitch_is_reported_not_raised(self, keyless):
         server, _ = keyless
-        result = await server.call_tool("verify_architecture", {"pitch": "   "})
+        result = await server.call_tool("check_what_exists", {"pitch": "   "})
         assert text_of(result).strip()
 
 
@@ -287,18 +287,18 @@ class TestWindowParameter:
 
     async def test_tool_exposes_a_months_parameter(self, keyless):
         server, _ = keyless
-        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
         assert "months" in (tool.input_schema or {}).get("properties", {})
 
     async def test_months_is_optional(self, keyless):
         server, _ = keyless
-        tool = next(t for t in await server.list_tools() if t.name == "verify_architecture")
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
         assert "months" not in (tool.input_schema or {}).get("required", [])
 
     async def test_months_reaches_retrieval(self, keyless):
         server, state = keyless
         await server.call_tool(
-            "verify_architecture",
+            "check_what_exists",
             {"pitch": "a pitch", "domain_query": "a query", "months": 24},
         )
         assert state["kwargs"]["months"] == 24
@@ -308,6 +308,6 @@ class TestWindowParameter:
 
         server, state = keyless
         await server.call_tool(
-            "verify_architecture", {"pitch": "a pitch", "domain_query": "a query"}
+            "check_what_exists", {"pitch": "a pitch", "domain_query": "a query"}
         )
         assert state["kwargs"]["months"] == DEFAULT_WINDOW_MONTHS

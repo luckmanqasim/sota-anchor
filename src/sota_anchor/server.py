@@ -17,8 +17,8 @@ from .arbiter import (
     ArbiterError,
     LLMClient,
     LLMUnavailable,
+    check_what_exists,
     resolve_settings,
-    verify_architecture,
 )
 from .catalog import (
     DEFAULT_MAX_PER_PROVIDER,
@@ -32,7 +32,7 @@ from .retriever import DEFAULT_WINDOW_MONTHS, gather_evidence
 
 SERVER_NAME = "sota-anchor"
 
-VERIFY_DESCRIPTION = (
+CHECK_DESCRIPTION = (
     "Check whether a plan relies on something being unavailable that may no longer "
     "be: no library or reader for a file format, only a vendor SDK able to open it, "
     "no API for the data, or a model that cannot do the task. Call it before "
@@ -89,7 +89,7 @@ def build_server(
         instructions=(
             "models://active lists the model API endpoints a public registry "
             "currently serves; read it before writing a model identifier into code "
-            "or config. Call verify_architecture before building around something "
+            "or config. Call check_what_exists before building around something "
             "assumed to be unavailable - a custom parser or converter for a format "
             "thought to need vendor tooling, a from-scratch rewrite, or a "
             "workaround for a model limitation - and before advising that no tool "
@@ -108,8 +108,8 @@ def build_server(
             return json.dumps({"error": str(error)})
         return json.dumps(catalog_payload(catalog), indent=2)
 
-    @mcp.tool(description=VERIFY_DESCRIPTION)
-    async def verify_architecture_tool(
+    @mcp.tool(description=CHECK_DESCRIPTION)
+    async def check_what_exists_tool(
         pitch: str,
         domain_query: str | None = None,
         capability_query: str | None = None,
@@ -144,7 +144,7 @@ def build_server(
             return payload.render()
 
         try:
-            report = await verify_architecture(
+            report = await check_what_exists(
                 pitch,
                 llm=llm,
                 gather=gather_evidence,
@@ -157,11 +157,11 @@ def build_server(
 
     # Registered under the name the spec gives, without shadowing the imported
     # pipeline function inside this module.
-    mcp.remove_tool("verify_architecture_tool")
+    mcp.remove_tool("check_what_exists_tool")
     mcp.add_tool(
-        verify_architecture_tool,
-        name="verify_architecture",
-        description=VERIFY_DESCRIPTION,
+        check_what_exists_tool,
+        name="check_what_exists",
+        description=CHECK_DESCRIPTION,
     )
 
     @mcp.prompt(
@@ -189,7 +189,7 @@ def build_server(
                 "parser or converter for a format thought to need vendor tooling, a",
                 "rewrite of an existing library from scratch, an OCR or heuristic stage",
                 "around a model limitation - or before advising that no tool exists for",
-                "it, call the `verify_architecture` tool with the design in question.",
+                "it, call the `check_what_exists` tool with the design in question.",
                 "It searches recent papers, repositories and package registries, and",
                 "reports whether an existing solution already replaces what was about",
                 "to be built.",

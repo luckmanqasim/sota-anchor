@@ -462,7 +462,7 @@ class Report(BaseModel):
 EvidenceGatherer = Callable[..., Awaitable[EvidenceSet]]
 
 
-async def verify_architecture(
+async def check_what_exists(
     proposal: str,
     *,
     llm: JSONCompleter,

@@ -3,13 +3,13 @@ description: Check whether a design relies on something assumed to be unavailabl
 argument-hint: [design or architecture pitch]
 ---
 
-Use the `sota-architect` skill to check this proposal:
+Use the `check-what-exists` skill to check this proposal:
 
 $ARGUMENTS
 
 Work through the skill's steps in order: invert the proposal into the limitation
 it assumes plus a `domain_query` and a `capability_query`, retrieve evidence with
-the `verify_architecture` MCP tool (the skill's CLI fallback only if the server
+the `check_what_exists` MCP tool (the skill's CLI fallback only if the server
 is unreachable), then judge strictly against what came back.
 
 The check is not limited to what models can do. A custom parser for a format
