@@ -1,4 +1,4 @@
-"""sota-anchor: break epistemic inertia in AI coding agents.
+"""sota-anchor: check what already exists before a coding agent builds it from scratch.
 
 The version is read from installed package metadata so it is declared once, in
 ``pyproject.toml``, rather than repeated across the CLI, the MCP server, the

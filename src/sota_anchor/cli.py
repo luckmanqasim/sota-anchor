@@ -72,7 +72,11 @@ def _force_utf8_output() -> None:
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="sota-anchor")
 def main() -> None:
-    """Break epistemic inertia: anchor agents to current models and live capabilities."""
+    """Check what already exists before your coding agent builds it from scratch.
+
+    Searches recent papers, repositories and packages when a plan assumes something
+    isn't available, and keeps a dated list of the model API IDs a public registry serves.
+    """
     _force_utf8_output()
 
 
