@@ -23,11 +23,12 @@ TTL_MINUTES="${SOTA_ANCHOR_TTL_MINUTES:-1440}"
 # code this hook ships with, and --project leaves the working directory alone.
 # That directory is the user's project. A bare `uv run` resolved against it,
 # found no sota-anchor there, and in a project with a pyproject.toml created a
-# .venv and a uv.lock the user never asked for.
+# .venv and a uv.lock the user never asked for. --frozen installs exactly what
+# the plugin's uv.lock pins and never re-resolves versions on the user's machine.
 refresh_detached() {
     local -a runner
     if command -v uv >/dev/null 2>&1; then
-        runner=(uv run --quiet --project "$PLUGIN_ROOT" sota-anchor seed --refresh)
+        runner=(uv run --quiet --frozen --project "$PLUGIN_ROOT" sota-anchor seed --refresh)
     elif command -v sota-anchor >/dev/null 2>&1; then
         runner=(sota-anchor seed --refresh)
     elif command -v python >/dev/null 2>&1; then

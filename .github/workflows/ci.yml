@@ -43,7 +43,7 @@ jobs:
 
       - name: Install the project
         # A project virtualenv, never the system interpreter.
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Check the interpreter is the matrix version
         # The failure above was silent on Windows: the jobs passed on whatever

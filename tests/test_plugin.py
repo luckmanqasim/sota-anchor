@@ -487,8 +487,10 @@ class TestHookExecution:
         )
         record = self._refresh_record()
         assert record["tool"] == "uv"
+        # --frozen: installs exactly what uv.lock pins, as the plugin directory
+        # requires of every launcher, and never re-resolves on the user's machine.
         assert record["args"] == (
-            f"run --quiet --project {self._posix(REPO)} sota-anchor seed --refresh"
+            f"run --quiet --frozen --project {self._posix(REPO)} sota-anchor seed --refresh"
         )
 
     def test_refresh_writes_where_the_hook_reads(self, tmp_path):
@@ -617,6 +619,17 @@ class TestMcpPortability:
     def test_server_does_not_assume_the_cli_is_on_path(self):
         server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         assert server["command"] != "sota-anchor"
+
+    def test_server_runs_from_the_lockfile(self):
+        # Without --frozen or --locked, `uv run` resolves version ranges at install
+        # time, and the plugin directory refuses a launcher that isn't pinned.
+        server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
+        assert "--frozen" in server["args"]
+
+    def test_the_lockfile_ships_with_the_plugin(self):
+        # --frozen fails outright without a lockfile to read.
+        assert (REPO / "uv.lock").is_file()
+        assert "uv.lock" not in (REPO / ".gitignore").read_text(encoding="utf-8").split()
 
 
 class TestLineEndingResilience:
