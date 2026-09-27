@@ -2,7 +2,11 @@
   "mcpServers": {
     "check": {
       "command": "uv",
-      "args": ["run", "--quiet", "--frozen", "--directory", "${CLAUDE_PLUGIN_ROOT}", "sota-anchor", "serve"]
+      "args": ["run", "--quiet", "--frozen", "--directory", "${CLAUDE_PLUGIN_ROOT}", "sota-anchor", "serve"],
+      "env": {
+        "SOTA_ANCHOR_GITHUB_TOKEN": "${user_config.github_token}",
+        "SOTA_ANCHOR_BRAVE_API_KEY": "${user_config.brave_api_key}"
+      }
     }
   }
 }

@@ -349,6 +349,48 @@ class TestGithubRetrieval:
         await self._gather(handler, github_token=None)
         assert "authorization" not in seen
 
+    async def test_token_comes_from_its_own_variable(self, monkeypatch):
+        monkeypatch.setenv("SOTA_ANCHOR_GITHUB_TOKEN", "fake-token-for-tests")
+        seen: dict[str, str] = {}
+
+        def handler(request):
+            if GITHUB_URL in str(request.url):
+                seen.update(request.headers)
+                return httpx.Response(200, json=repos([]))
+            return httpx.Response(200, text=atom([]))
+
+        await self._gather(handler)
+        assert seen.get("authorization") == "Bearer fake-token-for-tests"
+
+    async def test_a_token_it_was_not_given_is_left_alone(self, monkeypatch):
+        # A token already in the environment belongs to the user's other tools.
+        # Reading it unasked is what the plugin directory holds a plugin for.
+        monkeypatch.setenv("GITHUB_TOKEN", "someone-elses-token")
+        monkeypatch.setenv("GH_TOKEN", "someone-elses-token")
+        seen: dict[str, str] = {}
+
+        def handler(request):
+            if GITHUB_URL in str(request.url):
+                seen.update(request.headers)
+                return httpx.Response(200, json=repos([]))
+            return httpx.Response(200, text=atom([]))
+
+        await self._gather(handler)
+        assert "authorization" not in seen
+
+    async def test_an_unfilled_plugin_setting_counts_as_no_token(self, monkeypatch):
+        monkeypatch.setenv("SOTA_ANCHOR_GITHUB_TOKEN", "${user_config.github_token}")
+        seen: dict[str, str] = {}
+
+        def handler(request):
+            if GITHUB_URL in str(request.url):
+                seen.update(request.headers)
+                return httpx.Response(200, json=repos([]))
+            return httpx.Response(200, text=atom([]))
+
+        await self._gather(handler)
+        assert "authorization" not in seen
+
 
 class TestDegradation:
     async def _gather(self, handler, **kwargs):
@@ -1648,8 +1690,8 @@ class TestCratesRegistry:
 
 
 class TestWebSearch:
-    """Optional: a general web source, active only when BRAVE_API_KEY is set,
-    so the zero-key default never changes."""
+    """Optional: a general web source, active only when SOTA_ANCHOR_BRAVE_API_KEY
+    is set, so the zero-key default never changes."""
 
     async def test_is_skipped_without_a_key(self):
         called: list[str] = []
@@ -1662,8 +1704,8 @@ class TestWebSearch:
         assert called == []
         assert not any(error.startswith("web") for error in evidence.errors)
 
-    async def test_runs_when_the_key_is_in_the_environment(self, monkeypatch):
-        monkeypatch.setenv("BRAVE_API_KEY", "test-key-not-real")
+    async def test_runs_when_its_own_variable_holds_a_key(self, monkeypatch):
+        monkeypatch.setenv("SOTA_ANCHOR_BRAVE_API_KEY", "test-key-not-real")
         tokens: list[str] = []
 
         def web(request):
@@ -1672,6 +1714,17 @@ class TestWebSearch:
 
         await collect("nwd reader", router(web=web))
         assert tokens and set(tokens) == {"test-key-not-real"}
+
+    async def test_a_key_it_was_not_given_is_left_alone(self, monkeypatch):
+        monkeypatch.setenv("BRAVE_API_KEY", "someone-elses-key")
+        called: list[str] = []
+
+        def web(request):
+            called.append(str(request.url))
+            return httpx.Response(200, json=web_results([]))
+
+        await collect("nwd reader", router(web=web))
+        assert called == []
 
     async def test_freshness_is_the_rolling_window(self):
         windows: list[str] = []
@@ -1708,7 +1761,7 @@ class TestWebSearch:
     async def test_requested_without_a_key_it_says_why(self):
         evidence = await collect("nwd reader", router(), sources=("web",))
         [error] = evidence.errors
-        assert "BRAVE_API_KEY" in error
+        assert "SOTA_ANCHOR_BRAVE_API_KEY" in error
 
     async def test_a_rejected_key_is_reported_without_echoing_it(self):
         def web(request):

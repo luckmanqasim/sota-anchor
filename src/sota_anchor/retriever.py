@@ -7,7 +7,7 @@ Every source is filtered to a rolling recency window and queried concurrently:
   work that arXiv's keyword matching misses;
 * GitHub - repositories;
 * npm and crates.io - published packages;
-* the web, through Brave Search - only when ``BRAVE_API_KEY`` is set, so the
+* the web, through Brave Search - only when ``SOTA_ANCHOR_BRAVE_API_KEY`` is set, so the
   default install needs no key at all.
 
 PyPI is absent by necessity rather than choice: it offers no search API, and its
@@ -51,12 +51,14 @@ NPM_SEARCH_URL = "https://registry.npmjs.org/-/v1/search"
 CRATES_URL = "https://crates.io/api/v1/crates"
 BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
 
-#: Switches the web source on. Named as Brave's own tooling names it, so a key
-#: already set for another Brave integration is picked up.
-WEB_API_KEY_ENV = "BRAVE_API_KEY"
+#: Switches the web source on. A variable of this project's own: a key already set
+#: for another tool stays that tool's, and the plugin hands this one over from its
+#: settings.
+WEB_API_KEY_ENV = "SOTA_ANCHOR_BRAVE_API_KEY"
 
-#: Optional; raises GitHub's unauthenticated search limit of ten a minute.
-GITHUB_TOKEN_ENVS = ("GITHUB_TOKEN", "GH_TOKEN")
+#: Optional; raises GitHub's unauthenticated search limit of ten a minute. Named
+#: for this project for the same reason: a token set for other tools stays theirs.
+GITHUB_AUTH_ENVS = ("SOTA_ANCHOR_GITHUB_TOKEN",)
 
 DEFAULT_WINDOW_MONTHS = 12
 DEFAULT_PER_SOURCE = 5
@@ -967,7 +969,9 @@ async def _run_source(
 def _from_environment(names: Sequence[str]) -> str | None:
     for name in names:
         value = os.environ.get(name, "").strip()
-        if value:
+        # The plugin fills these from its settings as ${user_config.KEY}. An option
+        # left unfilled must never be sent anywhere as if it were a key.
+        if value and not value.startswith("${"):
             return value
     return None
 
@@ -994,7 +998,7 @@ async def gather_evidence(
     budget; all of them share one deadline and one limit on requests in flight.
     """
     web_api_key = web_api_key or _from_environment([WEB_API_KEY_ENV])
-    github_token = github_token or _from_environment(GITHUB_TOKEN_ENVS)
+    github_token = github_token or _from_environment(GITHUB_AUTH_ENVS)
     chosen, notes = _choose_sources(sources, web_key=bool(web_api_key))
 
     # One query or a ladder of vectors; a single string is the common case.

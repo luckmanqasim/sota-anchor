@@ -15,5 +15,21 @@
     "context",
     "hooks",
     "arxiv"
-  ]
+  ],
+  "userConfig": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub token (optional)",
+      "description": "Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes. Leave empty to search without one.",
+      "sensitive": true,
+      "default": ""
+    },
+    "brave_api_key": {
+      "type": "string",
+      "title": "Brave Search API key (optional)",
+      "description": "Adds general web search as an evidence source. Leave empty and the web isn't searched.",
+      "sensitive": true,
+      "default": ""
+    }
+  }
 }

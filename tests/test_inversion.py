@@ -136,20 +136,21 @@ class TestSettingsResolution:
         assert settings.base_url == "https://example.test/v1"
         assert settings.model == "acme/model-9"
 
-    def test_falls_back_to_openrouter_key_and_base_url(self):
-        settings = resolve_settings({"OPENROUTER_API_KEY": "sk-or"})
-        assert settings.api_key == "sk-or"
+    def test_defaults_to_openrouter(self):
+        # The catalog already comes from OpenRouter; one key covers both channels.
+        settings = resolve_settings({"SOTA_ANCHOR_API_KEY": "sk-explicit"})
         assert "openrouter.ai" in settings.base_url
 
-    def test_falls_back_to_openai_key_and_base_url(self):
-        settings = resolve_settings({"OPENAI_API_KEY": "sk-oa"})
-        assert settings.api_key == "sk-oa"
-        assert "openai.com" in settings.base_url
+    def test_the_base_url_points_the_key_at_any_compatible_api(self):
+        settings = resolve_settings(
+            {"SOTA_ANCHOR_API_KEY": "sk-oa", "SOTA_ANCHOR_BASE_URL": "https://api.openai.com/v1"}
+        )
+        assert settings.base_url == "https://api.openai.com/v1"
 
-    def test_openrouter_wins_when_both_are_present(self):
-        # The catalog already comes from OpenRouter; one key should cover both channels.
-        settings = resolve_settings({"OPENROUTER_API_KEY": "sk-or", "OPENAI_API_KEY": "sk-oa"})
-        assert settings.api_key == "sk-or"
+    def test_keys_it_was_not_given_are_left_alone(self):
+        # Keys already in the environment belong to the user's other tools.
+        with pytest.raises(LLMUnavailable):
+            resolve_settings({"OPENROUTER_API_KEY": "sk-or", "OPENAI_API_KEY": "sk-oa"})
 
     def test_no_key_at_all_is_a_clear_failure(self):
         with pytest.raises(LLMUnavailable, match="SOTA_ANCHOR_API_KEY"):
@@ -157,7 +158,7 @@ class TestSettingsResolution:
 
     def test_model_is_unset_when_not_configured(self):
         # An unset model is resolved from the live catalog, never hardcoded here.
-        assert resolve_settings({"OPENROUTER_API_KEY": "sk-or"}).model is None
+        assert resolve_settings({"SOTA_ANCHOR_API_KEY": "sk-explicit"}).model is None
 
 
 class TestModelResolution:

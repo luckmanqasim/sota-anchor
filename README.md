@@ -382,17 +382,28 @@ verdict itself, which makes it usable as a gate:
 - run: uv tool install git+https://github.com/luckmanqasim/sota-anchor
 - run: sota-anchor check "$(cat docs/design-notes.md)"
   env:
-    OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    SOTA_ANCHOR_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 ## Configuration
 
 Nothing needs to be set. These are all optional.
 
+In Claude Code, the plugin asks for its two optional keys when you enable it, and keeps
+them in your system's credential store. Leave either empty to go without.
+
+| Plugin setting | Effect |
+| --- | --- |
+| GitHub token | Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes. |
+| Brave Search API key | Adds general web search as an evidence source. Unset, the web is not queried. |
+
+sota-anchor only reads variables named for it, so a key you've set for other tools, such
+as `GITHUB_TOKEN`, is never picked up. Outside the plugin, set these instead:
+
 | Variable | Effect |
 | --- | --- |
-| `BRAVE_API_KEY` | Adds general web search as an evidence source. Unset, the web is not queried. |
-| `GITHUB_TOKEN` / `GH_TOKEN` | Raises GitHub's unauthenticated limit of ten searches a minute. |
+| `SOTA_ANCHOR_GITHUB_TOKEN` | The GitHub token above. |
+| `SOTA_ANCHOR_BRAVE_API_KEY` | The Brave Search key above. |
 | `SOTA_ANCHOR_CACHE_DIR` | Where the catalog and session block are cached. Default `~/.cache/sota-anchor`. |
 | `SOTA_ANCHOR_TTL_MINUTES` | How old the session block can get before the hook refreshes it. Default `1440`. |
 | `SOTA_ANCHOR_PROMPT_HOOK` | `1` turns on the prompt-time nudge in Claude Code. |
@@ -401,10 +412,9 @@ For a headless verdict, where no agent is present to judge (as in CI):
 
 | Variable | Effect |
 | --- | --- |
-| `SOTA_ANCHOR_API_KEY` | Any OpenAI-compatible key. Preferred. |
-| `SOTA_ANCHOR_BASE_URL` | The API base URL. Defaults to OpenRouter. |
+| `SOTA_ANCHOR_API_KEY` | Any OpenAI-compatible key. |
+| `SOTA_ANCHOR_BASE_URL` | The API base URL. Defaults to OpenRouter; set it to use another provider's key. |
 | `SOTA_ANCHOR_MODEL` | The judging model. Unset, it is picked from the live catalog. |
-| `OPENROUTER_API_KEY`, `OPENAI_API_KEY` | Fallbacks, in that order. |
 
 ## Limitations
 

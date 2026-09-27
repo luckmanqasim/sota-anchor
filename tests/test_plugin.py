@@ -126,9 +126,14 @@ class TestMcpManifest:
         assert "serve" in server["args"]
 
     def test_requires_no_api_key_to_start(self):
+        # A key reaches the server only as an optional plugin setting, never
+        # written into the file, and never one the server can't start without.
         server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
-        env = server.get("env") or {}
-        assert not [key for key in env if "API_KEY" in key and env[key]]
+        options = load(PLUGIN_MANIFEST).get("userConfig", {})
+        for name, value in (server.get("env") or {}).items():
+            if "API_KEY" in name or "TOKEN" in name:
+                assert value.startswith("${user_config.") and value.endswith("}")
+                assert not options[value[len("${user_config."):-1]].get("required", False)
 
 
 class TestSkill:
@@ -630,6 +635,41 @@ class TestMcpPortability:
         # --frozen fails outright without a lockfile to read.
         assert (REPO / "uv.lock").is_file()
         assert "uv.lock" not in (REPO / ".gitignore").read_text(encoding="utf-8").split()
+
+
+class TestOptionalKeys:
+    """The plugin directory holds any plugin that reads a credential already set in
+    the user's environment. The optional keys are plugin settings instead: Claude
+    Code asks for them, keeps them in the system's credential store, and hands
+    them to the server alone."""
+
+    def test_asks_for_each_optional_key_as_a_sensitive_setting(self):
+        options = load(PLUGIN_MANIFEST)["userConfig"]
+        assert set(options) == {"github_token", "brave_api_key"}
+        for option in options.values():
+            assert option["type"] == "string"
+            assert option["sensitive"] is True
+            assert not option.get("required", False)
+            assert option["default"] == ""
+            assert option["title"] and option["description"]
+
+    def test_hands_the_settings_to_the_server(self):
+        env = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]["env"]
+        assert env == {
+            "SOTA_ANCHOR_GITHUB_TOKEN": "${user_config.github_token}",
+            "SOTA_ANCHOR_BRAVE_API_KEY": "${user_config.brave_api_key}",
+        }
+
+    def test_no_code_reads_a_credential_it_was_not_given(self):
+        import re
+
+        ambient = re.compile(r"(?<![A-Z_])(GITHUB_TOKEN|GH_TOKEN|BRAVE_API_KEY|OPENROUTER_API_KEY|OPENAI_API_KEY)")
+        offenders = [
+            f"{path.name}: {match.group(0)}"
+            for path in (REPO / "src" / "sota_anchor").glob("*.py")
+            for match in ambient.finditer(path.read_text(encoding="utf-8"))
+        ]
+        assert offenders == []
 
 
 class TestLineEndingResilience:

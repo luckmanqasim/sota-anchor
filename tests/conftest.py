@@ -27,11 +27,11 @@ def isolated_cache_dir(tmp_path_factory, monkeypatch):
 def no_ambient_credentials(monkeypatch):
     """Keep a developer's own keys out of the suite.
 
-    Retrieval picks these up from the environment, so a set BRAVE_API_KEY would
-    switch the web source on in every test, and a GITHUB_TOKEN would change the
-    headers a test asserts on.
+    The code reads these from the environment, so a set web key would switch the
+    web source on in every test, a GitHub token would change the headers a test
+    asserts on, and an API key would give the CLI a verdict it shouldn't have.
     """
-    for name in ("BRAVE_API_KEY", "GITHUB_TOKEN", "GH_TOKEN"):
+    for name in ("SOTA_ANCHOR_BRAVE_API_KEY", "SOTA_ANCHOR_GITHUB_TOKEN", "SOTA_ANCHOR_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 

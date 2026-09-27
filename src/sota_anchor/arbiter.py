@@ -34,7 +34,6 @@ from .catalog import Catalog, CatalogUnavailable, fetch_catalog
 from .retriever import DEFAULT_WINDOW_MONTHS, EvidenceSet, gather_evidence
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENAI_BASE_URL = "https://api.openai.com/v1"
 MAX_JSON_ATTEMPTS = 3
 
 
@@ -118,33 +117,22 @@ class LLMSettings(BaseModel):
 def resolve_settings(env: Mapping[str, str] | None = None) -> LLMSettings:
     """Resolve LLM configuration from the environment.
 
-    OpenRouter is preferred when both keys are present: the catalog already comes
-    from OpenRouter, so one key covers both channels.
+    Only this project's variables are read: a key set for other tools stays theirs.
+    SOTA_ANCHOR_BASE_URL points the key at any OpenAI-compatible API. OpenRouter is
+    the default, since the catalog already comes from there.
     """
     env = env if env is not None else os.environ
 
-    explicit = (env.get("SOTA_ANCHOR_API_KEY") or "").strip()
-    if explicit:
-        return LLMSettings(
-            api_key=explicit,
-            base_url=(env.get("SOTA_ANCHOR_BASE_URL") or OPENROUTER_BASE_URL).strip(),
-            model=(env.get("SOTA_ANCHOR_MODEL") or "").strip() or None,
+    key = (env.get("SOTA_ANCHOR_API_KEY") or "").strip()
+    if not key:
+        raise LLMUnavailable(
+            "no API key found: set SOTA_ANCHOR_API_KEY, and SOTA_ANCHOR_BASE_URL for a "
+            "provider other than OpenRouter"
         )
-
-    for key_name, base_url in (
-        ("OPENROUTER_API_KEY", OPENROUTER_BASE_URL),
-        ("OPENAI_API_KEY", OPENAI_BASE_URL),
-    ):
-        key = (env.get(key_name) or "").strip()
-        if key:
-            return LLMSettings(
-                api_key=key,
-                base_url=(env.get("SOTA_ANCHOR_BASE_URL") or base_url).strip(),
-                model=(env.get("SOTA_ANCHOR_MODEL") or "").strip() or None,
-            )
-
-    raise LLMUnavailable(
-        "no API key found: set SOTA_ANCHOR_API_KEY (or OPENROUTER_API_KEY / OPENAI_API_KEY)"
+    return LLMSettings(
+        api_key=key,
+        base_url=(env.get("SOTA_ANCHOR_BASE_URL") or OPENROUTER_BASE_URL).strip(),
+        model=(env.get("SOTA_ANCHOR_MODEL") or "").strip() or None,
     )
 
 
