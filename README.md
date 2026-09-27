@@ -416,6 +416,42 @@ For a headless verdict, where no agent is present to judge (as in CI):
 | `SOTA_ANCHOR_BASE_URL` | The API base URL. Defaults to OpenRouter; set it to use another provider's key. |
 | `SOTA_ANCHOR_MODEL` | The judging model. Unset, it is picked from the live catalog. |
 
+## What it sends and fetches
+
+Everything sota-anchor does over the network, and every file it writes. There is no
+telemetry.
+
+**When the check runs**, the search queries your agent writes from your request, and
+shorter versions of them as the search relaxes, go to these public APIs with a
+`sota-anchor/<version>` User-Agent:
+
+| Service | Endpoint | What it receives |
+| --- | --- | --- |
+| arXiv | `export.arxiv.org/api/query` | the queries |
+| Hugging Face | `huggingface.co/api/papers/search` | the queries |
+| GitHub | `api.github.com/search/repositories` | the queries, and your GitHub token if you set one |
+| npm | `registry.npmjs.org/-/v1/search` | the queries |
+| crates.io | `crates.io/api/v1/crates` | the queries |
+| Brave Search | `api.search.brave.com/res/v1/web/search` | the queries and your key, only if you set one |
+
+**For the model list**, it fetches `openrouter.ai/api/v1/models`, a public endpoint that
+takes no key and receives nothing about you. The session hook refreshes it in the
+background at most once a day.
+
+**For a headless verdict**, from `sota-anchor check` with `SOTA_ANCHOR_API_KEY` set, the
+plan and the evidence found for it go to the API at `SOTA_ANCHOR_BASE_URL`, which is
+`openrouter.ai/api/v1` unless you change it. The plugin never does this: in Claude Code,
+your agent does the judging.
+
+**On first launch**, uv downloads the Python packages the server needs from PyPI, at the
+exact versions `uv.lock` pins.
+
+**On disk**, it writes the model catalog and the session block to `~/.cache/sota-anchor`,
+or to `SOTA_ANCHOR_CACHE_DIR`. `/sota-sync` and `sota-anchor sync` write a marked block
+into `CLAUDE.md`, `AGENTS.md` or Cursor's rules in the current project, and only when you
+run them. The opt-in prompt hook reads your prompt on your machine to decide whether to
+add a nudge, and sends it nowhere.
+
 ## Limitations
 
 - **Whether the check runs is your agent's decision.** In Claude Code it ran before any code
