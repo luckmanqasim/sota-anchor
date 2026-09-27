@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.luckmanqasim/sota-anchor",
+  "title": "sota-anchor",
+  "description": "Checks what already exists before your coding agent builds it from scratch.",
+  "repository": {
+    "url": "https://github.com/luckmanqasim/sota-anchor",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "sota-anchor",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "SOTA_ANCHOR_GITHUB_TOKEN",
+          "description": "Optional. Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "SOTA_ANCHOR_BRAVE_API_KEY",
+          "description": "Optional. Adds general web search through Brave Search as an evidence source.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
