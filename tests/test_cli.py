@@ -214,11 +214,18 @@ class TestServe:
 
 class TestTopLevel:
     def test_reports_its_version(self, runner):
+        # The version is declared once, in pyproject.toml; a literal here broke on
+        # every release. The CLI must report the declared one.
+        import tomllib
+        from pathlib import Path
+
         from sota_anchor.cli import main
 
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert f"version {declared}" in result.output
 
     def test_help_lists_every_command(self, runner):
         from sota_anchor.cli import main
