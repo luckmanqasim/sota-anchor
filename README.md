@@ -1,10 +1,3 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
-    <img src="docs/images/logo-light.svg" width="96" height="96" alt="">
-  </picture>
-</p>
-
 <h1 align="center">sota-anchor</h1>
 
 <p align="center">
@@ -15,19 +8,16 @@
 
 <p align="center">
   <a href="https://github.com/luckmanqasim/sota-anchor/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/luckmanqasim/sota-anchor/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-10283F"></a>
+  <a href="https://github.com/luckmanqasim/sota-anchor/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-10283F"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-10283F">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-10283F">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-10283F">
   <img alt="No API key needed" src="https://img.shields.io/badge/API%20key-not%20needed-10283F">
 </p>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-    <img src="docs/images/hero-light.svg" alt="Two workflows from the same task, parsing Xcode 27 project files, to the same goal, build settings checked in CI. Without sota-anchor, the agent rebuilds it from scratch: strip trailing commas, model the project, resolve build settings, write a rule engine, write the CLI and tests; 755 lines of new code in 2 minutes 37 seconds. With sota-anchor, it checks what exists first, finds xcode-project-format, Apple's own library for the format, published in September 2026, and reuses it; no code written, 42 seconds.">
-  </picture>
-</p>
+<!-- mcp-name: io.github.luckmanqasim/sota-anchor -->
+
+![Two workflows from the same task, parsing Xcode 27 project files, to the same goal, build settings checked in CI. Without sota-anchor, the agent rebuilds it from scratch: strip trailing commas, model the project, resolve build settings, write a rule engine, write the CLI and tests; 755 lines of new code in 2 minutes 37 seconds. With sota-anchor, it checks what exists first, finds xcode-project-format, Apple's own library for the format, published in September 2026, and reuses it; no code written, 42 seconds.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/hero-light.svg)
 
 A coding agent plans from what it learned in training. When a task needs something it
 hasn't heard of, it assumes that thing doesn't exist, and does one of two expensive things:
@@ -55,9 +45,7 @@ parser: a Swift package of eight files and 755 lines, with the format worked out
 own words, "from your Logbook.xcodeproj/project.xcproj, not from any Apple documentation".
 It took 2 minutes 37 seconds.
 
-<p align="center">
-  <img src="docs/images/terminal-without.png" width="880" alt="A Claude Code session in a Mac terminal. Asked for a Swift parser for Xcode 27's project.xcproj format, which the request says has no library yet, Claude Code writes one from scratch: Package.swift, a trailing-comma stripper, a project model of 147 lines, a build-settings resolver of 169 lines, and more files below the fold.">
-</p>
+![A Claude Code session in a Mac terminal. Asked for a Swift parser for Xcode 27's project.xcproj format, which the request says has no library yet, Claude Code writes one from scratch: Package.swift, a trailing-comma stripper, a project model of 147 lines, a build-settings resolver of 169 lines, and more files below the fold.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/terminal-without.png)
 
 **After.** With sota-anchor, the check runs before any code. It finds Apple's own library
 for the format, [xcode-project-format](https://github.com/apple/xcode-project-format),
@@ -66,9 +54,7 @@ custom parser because "writing our own would duplicate it", and asks which rules
 check should enforce before writing it against Apple's library. 42 seconds, and no code
 written yet.
 
-<p align="center">
-  <img src="docs/images/terminal-with.png" width="880" alt="The same request with sota-anchor. Claude Code calls the sota-anchor check twice and fetches github.com/apple/xcode-project-format. It reports that Apple publishes an official Swift library for the format, says writing its own parser would duplicate it, and asks which rules the CI check should enforce. Done in 42 seconds, with no code written.">
-</p>
+![The same request with sota-anchor. Claude Code calls the sota-anchor check twice and fetches github.com/apple/xcode-project-format. It reports that Apple publishes an official Swift library for the format, says writing its own parser would duplicate it, and asks which rules the CI check should enforce. Done in 42 seconds, with no code written.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/terminal-with.png)
 
 <sub>Both are recorded Claude Code sessions (Opus 5.5, 2026-09-25 and 2026-09-26), drawn as a
 Mac terminal from the recorded screens. The first is shown from the top and runs on for
@@ -88,12 +74,7 @@ search returned for that plan on 2026-09-24.</sub>
 
 ## How it works
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.svg">
-    <img src="docs/images/how-it-works-light.svg" alt="Your request goes to your agent, which inverts it into what the plan assumes doesn't exist and writes two queries. sota-anchor searches the last year of arXiv, Hugging Face, GitHub, npm and crates.io and returns dated evidence. Your agent judges the evidence, never its memory, and reaches one of three outcomes: reuse what exists, build it, or no verdict.">
-  </picture>
-</p>
+![Your request goes to your agent, which inverts it into what the plan assumes doesn't exist and writes two queries. sota-anchor searches the last year of arXiv, Hugging Face, GitHub, npm and crates.io and returns dated evidence. Your agent judges the evidence, never its memory, and reaches one of three outcomes: reuse what exists, build it, or no verdict.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/how-it-works-light.svg)
 
 When a request rests on something being unavailable (a reader for a format only the vendor's
 software opens, a library nobody has written, a task models can't do yet), the
@@ -525,4 +506,4 @@ on it is this project's design hypothesis, not a finding of the paper.
 
 ## License
 
-[MIT](LICENSE) © 2026 Luckman Qasim
+[MIT](https://github.com/luckmanqasim/sota-anchor/blob/main/LICENSE) © 2026 Luckman Qasim
