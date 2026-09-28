@@ -4,12 +4,12 @@
     "name": "Luckman Qasim",
     "url": "https://github.com/luckmanqasim"
   },
-  "description": "sota-anchor checks what already exists before your coding agent builds it from scratch.",
+  "description": "sota-anchor finds what shipped after your coding agent's training, before it rebuilds it from scratch.",
   "plugins": [
     {
       "name": "sota-anchor",
       "source": "./",
-      "description": "Checks what already exists before your coding agent builds it from scratch: when a plan assumes something is unavailable, it searches the last year of papers, repositories and packages first. Also adds current model API IDs to each session. Needs no LLM API key.",
+      "description": "Finds libraries, tools and research released after your coding agent's training, before it rebuilds them from scratch: when a plan assumes something is unavailable, it searches the last year of papers, repositories and packages first. Also adds current model API IDs to each session. Needs no LLM API key.",
       "author": {
         "name": "Luckman Qasim",
         "url": "https://github.com/luckmanqasim"

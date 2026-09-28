@@ -1,9 +1,10 @@
 <h1 align="center">sota-anchor</h1>
 
 <p align="center">
-  <strong>Checks what already exists before your coding agent builds it from scratch.</strong><br>
-  An MCP server and Claude Code plugin that searches the last year of papers,<br>
-  repositories and packages whenever a plan assumes something isn't available.
+  <strong>Your coding agent doesn't know what shipped after its training.</strong><br>
+  sota-anchor is an MCP server and Claude Code plugin that checks the last year of papers,<br>
+  repositories and packages before your agent rebuilds something that already exists,<br>
+  or tells you it can't be done.
 </p>
 
 <p align="center">
@@ -17,16 +18,17 @@
 
 <!-- mcp-name: io.github.luckmanqasim/sota-anchor -->
 
-![Two workflows from the same task, parsing Xcode 27 project files, to the same goal, build settings checked in CI. Without sota-anchor, the agent rebuilds it from scratch: strip trailing commas, model the project, resolve build settings, write a rule engine, write the CLI and tests; 755 lines of new code in 2 minutes 37 seconds. With sota-anchor, it checks what exists first, finds xcode-project-format, Apple's own library for the format, published in September 2026, and reuses it; no code written, 42 seconds.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/hero-light.svg)
+![Two workflows from the same task, parsing Xcode 27 project files, to the same goal, build settings checked in CI. Without sota-anchor, the agent rebuilds it from what the model knew: strip trailing commas, model the project, resolve build settings, write a rule engine, write the CLI and tests; the model never saw Apple's library, so that is 755 lines of new code in 2 minutes 37 seconds. With sota-anchor, it checks what shipped since training, finds xcode-project-format, Apple's own library for the format, released on 2026-09-15, after the model's training, and reuses it; no code written, 42 seconds.](https://raw.githubusercontent.com/luckmanqasim/sota-anchor/main/docs/images/hero-light.svg)
 
 A coding agent plans from what it learned in training. When a task needs something it
 hasn't heard of, it assumes that thing doesn't exist, and does one of two expensive things:
 builds it from scratch, or tells you it can't be done. Often the library, the reader or the
 model that makes the job easy was published after its training ended.
 
-sota-anchor makes the agent look first. When a plan rests on something being unavailable,
-the agent searches recent papers, repositories and packages, and weighs what comes back,
-with dates. Then it reuses what exists, or builds knowing that nothing better does.
+sota-anchor makes the agent check what's been published since. When a plan rests on
+something being unavailable, the agent searches the last year of papers, repositories and
+packages, and weighs what comes back, with dates. Then it reuses what exists, or builds
+knowing that nothing better does.
 
 - **Any field.** Nothing in the code knows about any domain. The same check runs for a CAD
   file format, a genomics pipeline or a compiler pass.
@@ -49,8 +51,8 @@ It took 2 minutes 37 seconds.
 
 **After.** With sota-anchor, the check runs before any code. It finds Apple's own library
 for the format, [xcode-project-format](https://github.com/apple/xcode-project-format),
-published under Apache 2.0 on 2026-09-15. Claude Code confirms it on GitHub, drops the
-custom parser because "writing our own would duplicate it", and asks which rules the CI
+published under Apache 2.0 on 2026-09-15, after the model was trained. Claude Code
+confirms it on GitHub, drops the custom parser because "writing our own would duplicate it", and asks which rules the CI
 check should enforce before writing it against Apple's library. 42 seconds, and no code
 written yet.
 

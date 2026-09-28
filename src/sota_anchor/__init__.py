@@ -1,4 +1,4 @@
-"""sota-anchor: check what already exists before a coding agent builds it from scratch.
+"""sota-anchor: find what shipped after a coding agent's training, before it rebuilds it from scratch.
 
 The version is read from installed package metadata so it is declared once, in
 ``pyproject.toml``, rather than repeated across the CLI, the MCP server, the

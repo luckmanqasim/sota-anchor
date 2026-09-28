@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.luckmanqasim/sota-anchor",
   "title": "sota-anchor",
-  "description": "Checks what already exists before your coding agent builds it from scratch.",
+  "description": "Finds what shipped after your coding agent's training, before it rebuilds it from scratch.",
   "repository": {
     "url": "https://github.com/luckmanqasim/sota-anchor",
     "source": "github"

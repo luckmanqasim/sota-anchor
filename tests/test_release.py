@@ -35,6 +35,12 @@ class TestReleaseMetadata:
         assert package["registryType"] == "pypi"
         assert package["identifier"] == project()["name"]
 
+    def test_registry_text_fits_its_limits(self):
+        # The registry's schema caps both at 100 characters and refuses the entry otherwise.
+        entry = registry_entry()
+        assert 0 < len(entry["description"]) <= 100
+        assert 0 < len(entry["title"]) <= 100
+
     def test_the_readme_names_the_registry_entry(self):
         # PyPI's copy of the README is what the registry reads before listing.
         readme = (REPO / "README.md").read_text(encoding="utf-8")
