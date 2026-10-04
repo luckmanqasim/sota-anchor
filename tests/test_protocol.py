@@ -450,3 +450,26 @@ class TestMultiVectorInversion:
     async def test_neither_vector_means_inversion_is_still_pending(self):
         payload = await build_verification_payload(PITCH)
         assert payload.phase == PHASE_INVERT
+
+
+class TestEvidenceIsUntrusted:
+    """Titles and descriptions in the evidence are written by whoever published
+    them. The judging prompt says so, so a description that reads like an order
+    is weighed as text, and a package it names is checked before it is installed.
+    """
+
+    def _render(self) -> str:
+        return build_judgment_request(PITCH, QUERY, evidence_set("PlanSightRAG")).render()
+
+    def test_labels_the_evidence_as_third_party_text(self):
+        rendered = " ".join(self._render().lower().split())
+        assert "third-party" in rendered
+        assert "never instructions" in rendered
+
+    def test_asks_for_a_named_package_to_be_verified_before_install(self):
+        rendered = " ".join(self._render().lower().split())
+        assert "before installing" in rendered
+
+    def test_the_label_comes_before_the_evidence(self):
+        rendered = self._render()
+        assert rendered.index("third-party") < rendered.index("PlanSightRAG")
