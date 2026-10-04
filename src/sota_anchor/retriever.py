@@ -228,12 +228,12 @@ class EvidenceSet(BaseModel):
         for index, item in enumerate(self.items, start=1):
             dated = f"{DATE_LABELS.get(item.source, 'date')}: {item.published.isoformat()}"
             if item.detail:
-                dated += f" ({_asciify(item.detail)})"
+                dated += f" ({_one_line(item.detail)})"
             lines += [
-                f"{index}. [{item.source}] {_asciify(item.title)}",
+                f"{index}. [{item.source}] {_one_line(item.title)}",
                 f"   {dated}",
-                f"   url: {item.url}",
-                f"   {_asciify(item.snippet)}",
+                f"   url: {_one_line(item.url)}",
+                f"   {_one_line(item.snippet)}",
                 "",
             ]
         return "\n".join(lines).rstrip() + "\n"
@@ -252,6 +252,13 @@ def _asciify(text: str) -> str:
         .replace("\u201d", '"')
     )
     return unicodedata.normalize("NFKD", folded).encode("ascii", "ignore").decode("ascii")
+
+
+def _one_line(text: str) -> str:
+    """ASCII on a single line. Every field here was written by whoever published
+    the result, and a line break inside one would let it pass for a line of the
+    prompt around it."""
+    return " ".join(_asciify(text).split())
 
 
 def _plain(value: object) -> str:
