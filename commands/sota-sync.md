@@ -6,7 +6,7 @@ Refresh the model catalog from the public registry and rewrite the local
 instruction files. Run the plugin's own checkout, which needs `uv`:
 
 ```bash
-uv run --quiet --project "${CLAUDE_PLUGIN_ROOT}" sota-anchor sync --target all
+uv run --quiet --frozen --project "${CLAUDE_PLUGIN_ROOT}" sota-anchor sync --target all
 ```
 
 `--project` keeps the current directory as the working directory, so the files

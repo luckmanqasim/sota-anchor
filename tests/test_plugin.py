@@ -631,6 +631,21 @@ class TestMcpPortability:
         server = load(MCP_MANIFEST)["mcpServers"][MCP_SERVER]
         assert "--frozen" in server["args"]
 
+    def test_every_uv_launcher_in_the_plugin_is_pinned(self):
+        # The commands and the skill run the CLI too; an unpinned `uv run` there
+        # resolves versions on the user's machine just as the server would.
+        files = [*REPO.glob("commands/*.md"), *REPO.glob("skills/*/SKILL.md"), *REPO.glob("hooks/*")]
+        unpinned = [
+            f"{path.relative_to(REPO)}: {line.strip()}"
+            for path in files
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if "uv run " in line
+            and not line.lstrip().startswith("#")
+            and "--frozen" not in line
+            and "--locked" not in line
+        ]
+        assert unpinned == []
+
     def test_the_lockfile_ships_with_the_plugin(self):
         # --frozen fails outright without a lockfile to read.
         assert (REPO / "uv.lock").is_file()

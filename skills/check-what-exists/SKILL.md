@@ -93,7 +93,7 @@ resolved first: a bare `sota-anchor` usually fails with
 `PATH`. Use the first of these that works:
 
 ```bash
-uv run --quiet --project "${CLAUDE_PLUGIN_ROOT}" sota-anchor --version
+uv run --quiet --frozen --project "${CLAUDE_PLUGIN_ROOT}" sota-anchor --version
 "${CLAUDE_PLUGIN_ROOT}/.venv/bin/sota-anchor" --version          # POSIX
 "${CLAUDE_PLUGIN_ROOT}/.venv/Scripts/sota-anchor.exe" --version  # Windows
 command -v sota-anchor                                          # installed globally
