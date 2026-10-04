@@ -502,7 +502,7 @@ claude plugin validate .
 The suite never touches the network or your own cache. HTTP goes through
 `httpx.MockTransport` and the LLM through an injected fake. Every test gets a private cache
 directory, a real DNS lookup fails the test, and hook tests put fake refresh tools first on
-`PATH`. CI runs it on Ubuntu and Windows with Python 3.11 and 3.12.
+`PATH`. CI runs it on Ubuntu and Windows with Python 3.11, 3.12, 3.13 and 3.14.
 
 ## Background
 
