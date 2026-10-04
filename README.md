@@ -421,10 +421,11 @@ shorter versions of them as the search relaxes, go to these public APIs with a
 takes no key and receives nothing about you. The session hook refreshes it in the
 background at most once a day.
 
-**For a headless verdict**, from `sota-anchor check` with `SOTA_ANCHOR_API_KEY` set, the
-plan and the evidence found for it go to the API at `SOTA_ANCHOR_BASE_URL`, which is
-`openrouter.ai/api/v1` unless you change it. The plugin never does this: in Claude Code,
-your agent does the judging.
+**For a headless verdict**, when `SOTA_ANCHOR_API_KEY` is set, the plan and the evidence
+found for it go to the API at `SOTA_ANCHOR_BASE_URL`, which is `openrouter.ai/api/v1`
+unless you change it. Both `sota-anchor check` and the MCP tool do this, including the
+plugin's server if the variable is in the environment Claude Code starts from. Without
+it, your agent does the judging and nothing goes to an LLM API.
 
 **On first launch**, uv downloads the Python packages the server needs from PyPI, at the
 exact versions `uv.lock` pins.
