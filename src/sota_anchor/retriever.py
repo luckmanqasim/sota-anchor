@@ -416,6 +416,7 @@ async def _get_with_retry(
     source: str,
     headers: dict[str, str] | None = None,
     refusals: frozenset[int] = frozenset(),
+    follow_redirects: bool = True,
 ) -> httpx.Response:
     """GET with backoff on the statuses that mean "slow down", not "no".
 
@@ -426,7 +427,9 @@ async def _get_with_retry(
     shared deadline.
     """
     for attempt in range(MAX_RETRIES + 1):
-        response = await client.get(url, params=params, headers=headers)
+        response = await client.get(
+            url, params=params, headers=headers, follow_redirects=follow_redirects
+        )
         if response.status_code in refusals:
             raise Throttled(source, response.status_code)
         if response.status_code in RETRY_STATUSES:
@@ -891,6 +894,9 @@ async def _search_web(
             headers=headers,
             sleep=ctx.sleep,
             source="web",
+            # httpx strips Authorization on a cross-host redirect, but not this
+            # header, so a redirect is reported rather than followed with the key.
+            follow_redirects=False,
         )
         return _parse_web(response.json(), ctx.cutoff)
 

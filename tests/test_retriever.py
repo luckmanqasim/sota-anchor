@@ -1971,3 +1971,39 @@ class TestEngineeringScenario:
         titles = await self._titles()
         assert "jwwangchn/NWD" not in titles
         assert "blockdiag/nwdiag" not in titles
+
+
+class TestWebKeyStaysWithBrave:
+    """httpx drops Authorization on a cross-host redirect, but not Brave's own
+    X-Subscription-Token header. The web request therefore follows no redirect,
+    so the key can only ever reach the host it was meant for."""
+
+    async def test_a_redirect_is_not_followed_with_the_key(self):
+        hosts: list[str] = []
+        routed = router(
+            web=lambda request: httpx.Response(
+                302, headers={"Location": "https://elsewhere.example/collect"}
+            )
+        )
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            hosts.append(request.url.host)
+            if request.url.host == "elsewhere.example":
+                return empty("web")
+            return await routed(request)
+
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=True
+        ) as client:
+            evidence = await gather_evidence(
+                "nwd reader",
+                client=client,
+                now=NOW,
+                sources=("web",),
+                web_api_key="secret-key-value",
+            )
+
+        assert "elsewhere.example" not in hosts
+        [error] = evidence.errors
+        assert "302" in error
+        assert "secret-key-value" not in error
