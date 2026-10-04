@@ -396,7 +396,7 @@ For a headless verdict, where no agent is present to judge (as in CI):
 | Variable | Effect |
 | --- | --- |
 | `SOTA_ANCHOR_API_KEY` | Any OpenAI-compatible key. |
-| `SOTA_ANCHOR_BASE_URL` | The API base URL. Defaults to OpenRouter; set it to use another provider's key. |
+| `SOTA_ANCHOR_BASE_URL` | The API base URL. Defaults to OpenRouter; set it to use another provider's key. Must be `https://`, or `http://` for a server on this machine (`localhost`, `127.0.0.1`, `::1`). |
 | `SOTA_ANCHOR_MODEL` | The judging model. Unset, it is picked from the live catalog. |
 
 ## What it sends and fetches

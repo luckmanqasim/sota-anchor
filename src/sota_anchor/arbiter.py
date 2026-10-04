@@ -27,13 +27,18 @@ import os
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 from .catalog import Catalog, CatalogUnavailable, fetch_catalog
 from .retriever import DEFAULT_WINDOW_MONTHS, EvidenceSet, gather_evidence
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+#: Hosts the key may reach over plain HTTP: a model server on this machine, where
+#: the request never crosses a network.
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 MAX_JSON_ATTEMPTS = 3
 
 
@@ -109,7 +114,8 @@ class Verdict(BaseModel):
 
 
 class LLMSettings(BaseModel):
-    api_key: str
+    #: Shown as ********** wherever the settings are printed, logged or dumped.
+    api_key: SecretStr
     base_url: str
     model: str | None = None
 
@@ -129,11 +135,32 @@ def resolve_settings(env: Mapping[str, str] | None = None) -> LLMSettings:
             "no API key found: set SOTA_ANCHOR_API_KEY, and SOTA_ANCHOR_BASE_URL for a "
             "provider other than OpenRouter"
         )
+    base_url = (env.get("SOTA_ANCHOR_BASE_URL") or OPENROUTER_BASE_URL).strip()
+    if not _is_safe_base_url(base_url):
+        raise LLMUnavailable(
+            f"SOTA_ANCHOR_BASE_URL must start with https://, or http:// for a server on "
+            f"this machine (localhost, 127.0.0.1 or ::1); got {base_url!r}, so the key "
+            "was not used"
+        )
     return LLMSettings(
-        api_key=key,
-        base_url=(env.get("SOTA_ANCHOR_BASE_URL") or OPENROUTER_BASE_URL).strip(),
+        api_key=SecretStr(key),
+        base_url=base_url,
         model=(env.get("SOTA_ANCHOR_MODEL") or "").strip() or None,
     )
+
+
+def _is_safe_base_url(url: str) -> bool:
+    """Whether the key can be sent here: over TLS, or to this machine only."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if parts.scheme == "https":
+        return True
+    return parts.scheme == "http" and host in LOCAL_HOSTS
 
 
 CatalogFetcher = Callable[..., Awaitable[Catalog]]
@@ -204,7 +231,8 @@ class LLMClient:
         model = await self.ensure_model()
         if self._client is None:
             self._client = AsyncOpenAI(
-                api_key=self.settings.api_key, base_url=self.settings.base_url
+                api_key=self.settings.api_key.get_secret_value(),
+                base_url=self.settings.base_url,
             )
         response = await self._client.chat.completions.create(
             model=model,

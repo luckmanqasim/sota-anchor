@@ -132,7 +132,7 @@ class TestSettingsResolution:
                 "SOTA_ANCHOR_MODEL": "acme/model-9",
             }
         )
-        assert settings.api_key == "sk-explicit"
+        assert settings.api_key.get_secret_value() == "sk-explicit"
         assert settings.base_url == "https://example.test/v1"
         assert settings.model == "acme/model-9"
 
@@ -159,6 +159,72 @@ class TestSettingsResolution:
     def test_model_is_unset_when_not_configured(self):
         # An unset model is resolved from the live catalog, never hardcoded here.
         assert resolve_settings({"SOTA_ANCHOR_API_KEY": "sk-explicit"}).model is None
+
+
+class TestKeyHandling:
+    """The key goes to one place, over an encrypted connection, and is never
+    printed on the way."""
+
+    KEY = "sk-very-secret-value"
+
+    def _settings(self, base_url: str | None = None):
+        env = {"SOTA_ANCHOR_API_KEY": self.KEY}
+        if base_url is not None:
+            env["SOTA_ANCHOR_BASE_URL"] = base_url
+        return resolve_settings(env)
+
+    def test_the_key_is_masked_when_settings_are_printed(self):
+        settings = self._settings()
+        for shown in (repr(settings), str(settings), settings.model_dump_json()):
+            assert self.KEY not in shown
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://openrouter.ai/api/v1",
+            "https://api.openai.com/v1",
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:8000/v1",
+            "http://[::1]:8000/v1",
+        ],
+    )
+    def test_https_or_a_local_server_is_accepted(self, base_url):
+        assert self._settings(base_url).base_url == base_url
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "http://api.example.com/v1",
+            "http://localhost.example.com/v1",
+            "ftp://api.example.com/v1",
+            "api.example.com/v1",
+            "https:///v1",
+        ],
+    )
+    def test_any_other_base_url_is_refused(self, base_url):
+        with pytest.raises(LLMUnavailable, match="https://") as refused:
+            self._settings(base_url)
+        assert self.KEY not in str(refused.value)
+
+    async def test_the_client_receives_the_key_itself(self, monkeypatch):
+        import openai
+
+        from sota_anchor.arbiter import LLMClient
+
+        seen: dict[str, object] = {}
+
+        class Recorder:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+                raise RuntimeError("stop before any request")
+
+        monkeypatch.setattr(openai, "AsyncOpenAI", Recorder)
+        settings = self._settings()
+        settings.model = "acme/m"
+        with pytest.raises(RuntimeError, match="stop before any request"):
+            await LLMClient(settings).complete_json("prompt")
+        assert seen["api_key"] == self.KEY
+        assert seen["base_url"] == "https://openrouter.ai/api/v1"
 
 
 class TestModelResolution:
