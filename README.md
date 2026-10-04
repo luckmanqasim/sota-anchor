@@ -168,7 +168,7 @@ goes into the project's instructions file.
 **1. Install the CLI once:**
 
 ```bash
-uv tool install git+https://github.com/luckmanqasim/sota-anchor
+uv tool install sota-anchor   # or: pipx install sota-anchor
 ```
 
 **2. Register the MCP server** in your agent, using the snippet for it below.
@@ -287,6 +287,18 @@ Model list: `sota-anchor sync --target agents`.
 }
 ```
 
+To run it through `uvx` instead of installing it, raise the timeout: OpenCode waits 5 seconds
+for a server's tools, and the first launch spends longer than that downloading packages.
+
+```json
+"sota-anchor": {
+  "type": "local",
+  "command": ["uvx", "sota-anchor", "serve"],
+  "enabled": true,
+  "timeout": 30000
+}
+```
+
 Model list: `sota-anchor sync --target agents`. OpenCode reads `AGENTS.md`, and falls back
 to `CLAUDE.md` when there isn't one.
 
@@ -306,15 +318,13 @@ client's docs for where the file lives.
 }
 ```
 
-To run it without installing anything, let uv fetch it on demand:
+To run it without installing anything, let uv fetch it from PyPI on demand. The first launch
+downloads its packages, so a client with a short startup timeout may need a second try:
 
 ```json
 {
   "mcpServers": {
-    "sota-anchor": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/luckmanqasim/sota-anchor", "sota-anchor", "serve"]
-    }
+    "sota-anchor": { "command": "uvx", "args": ["sota-anchor", "serve"] }
   }
 }
 ```
@@ -362,7 +372,7 @@ verdict itself, which makes it usable as a gate:
 | `3` | No verdict: no key was set, so an agent still has to judge. Deliberately not `0`. |
 
 ```yaml
-- run: uv tool install git+https://github.com/luckmanqasim/sota-anchor
+- run: uv tool install sota-anchor
 - run: sota-anchor check "$(cat docs/design-notes.md)"
   env:
     SOTA_ANCHOR_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -377,7 +387,7 @@ them in your system's credential store. Leave either empty to go without.
 
 | Plugin setting | Effect |
 | --- | --- |
-| GitHub token | Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes. |
+| GitHub token | Raises GitHub's search limit from 10 to 30 requests a minute. Give it no scopes: a token that can see your private repositories adds them to the search results your agent reads. |
 | Brave Search API key | Adds general web search as an evidence source. Unset, the web is not queried. |
 
 sota-anchor only reads variables named for it, so a key you've set for other tools, such

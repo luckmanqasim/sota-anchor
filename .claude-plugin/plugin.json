@@ -20,7 +20,7 @@
     "github_token": {
       "type": "string",
       "title": "GitHub token (optional)",
-      "description": "Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes. Leave empty to search without one.",
+      "description": "Raises GitHub's search limit from 10 to 30 requests a minute. Use a token with no scopes, so private repositories stay out of search results. Leave empty to search without one.",
       "sensitive": true,
       "default": ""
     },

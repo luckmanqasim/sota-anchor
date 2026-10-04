@@ -26,7 +26,7 @@
       "environmentVariables": [
         {
           "name": "SOTA_ANCHOR_GITHUB_TOKEN",
-          "description": "Optional. Raises GitHub's search limit from 10 to 30 requests a minute. Any token works; it needs no scopes.",
+          "description": "Optional. Raises GitHub's search limit from 10 to 30 requests a minute. Use a token with no scopes, so private repositories stay out of search results.",
           "isRequired": false,
           "isSecret": true
         },
