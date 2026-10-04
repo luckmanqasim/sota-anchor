@@ -130,7 +130,9 @@ def build_server(
             # current endpoints declare. Its absence is not fatal.
             try:
                 catalog = await fetch_catalog()
-            except CatalogUnavailable:
+            except Exception:
+                # Any failure, not only an unreachable registry: the check must
+                # still search and answer without it.
                 catalog = None
             try:
                 payload = await build_verification_payload(

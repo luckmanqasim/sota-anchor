@@ -330,3 +330,30 @@ class TestWindowParameter:
                 {"pitch": "a pitch", "domain_query": "a query", "months": months},
             )
         assert "kwargs" not in state
+
+
+class TestCatalogFailureIsNotFatal:
+    """The registry snapshot only grounds the judge. Whatever goes wrong while
+    loading it, the check still searches and answers."""
+
+    async def test_the_check_answers_when_the_catalog_fails_unexpectedly(self, monkeypatch):
+        from sota_anchor import server as module
+
+        async def broken_fetch(**kwargs):
+            raise AttributeError("'list' object has no attribute 'get'")
+
+        async def fake_gather(query, **kwargs):
+            return evidence_set("PlanSightRAG")
+
+        def no_key():
+            from sota_anchor.arbiter import LLMUnavailable
+
+            raise LLMUnavailable("no API key found")
+
+        monkeypatch.setattr(module, "fetch_catalog", broken_fetch)
+        monkeypatch.setattr(module, "gather_evidence", fake_gather)
+        monkeypatch.setattr(module, "build_llm", no_key)
+        result = await module.build_server().call_tool(
+            "check_what_exists", {"pitch": "a pitch", "domain_query": "a query"}
+        )
+        assert "PlanSightRAG" in text_of(result)

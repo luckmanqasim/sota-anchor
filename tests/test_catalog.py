@@ -474,3 +474,65 @@ class TestUntrustedRegistryText:
         ]
         catalog = build_catalog([model], now=NOW)
         assert catalog.by_id("acme/multi").input_modalities == ("text", "image")
+
+
+GOOD_ROW = {
+    "id": "acme/good-1",
+    "created": ts(2026, 9, 1),
+    "architecture": {"output_modalities": ["text"]},
+    "supported_parameters": ["tools"],
+}
+
+
+class TestMalformedRegistryRows:
+    """One bad row must cost that row, not the catalog.
+
+    The raw payload is cached before it is tiered, so a row that crashed tiering
+    used to crash every later read of the cache too - and with it the
+    check_what_exists tool, which reads the catalog before it searches.
+    """
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            "acme/not-an-object",
+            {**GOOD_ROW, "id": "acme/far-future", "created": 10**20},
+            {**GOOD_ROW, "id": "acme/far-past", "created": -(10**20)},
+            {**GOOD_ROW, "id": "acme/context", "context_length": "lots"},
+            {**GOOD_ROW, "id": "acme/arch", "architecture": ["text"]},
+            {**GOOD_ROW, "id": "acme/pricing", "pricing": ["1"]},
+            {**GOOD_ROW, "id": "acme/params", "supported_parameters": "tools"},
+        ],
+    )
+    def test_a_malformed_row_does_not_break_the_catalog(self, row):
+        catalog = build_catalog([GOOD_ROW, row], now=NOW)
+        assert catalog.by_id("acme/good-1") is not None
+
+    def test_a_string_of_parameters_is_not_read_as_a_list(self):
+        row = {**GOOD_ROW, "id": "acme/params", "supported_parameters": "tools"}
+        entry = build_catalog([row], now=NOW).by_id("acme/params")
+        assert entry is None or entry.supports_tools is False
+
+    @pytest.mark.parametrize("body", [[1, 2], {"data": "x"}, "text"])
+    async def test_a_payload_of_the_wrong_shape_is_unavailable(self, body, tmp_path):
+        cache = tmp_path / "catalog.json"
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json=body))
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(CatalogUnavailable):
+                await fetch_catalog(cache_path=cache, client=client, now=NOW)
+        assert not cache.exists()
+
+    async def test_bad_rows_in_a_payload_are_skipped(self, tmp_path):
+        body = {"data": [1, "a", GOOD_ROW]}
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json=body))
+        async with httpx.AsyncClient(transport=transport) as client:
+            catalog = await fetch_catalog(cache_path=tmp_path / "c.json", client=client, now=NOW)
+        assert [m.id for m in catalog.models] == ["acme/good-1"]
+
+    async def test_a_cache_of_the_wrong_shape_counts_as_no_cache(self, tmp_path):
+        cache = tmp_path / "catalog.json"
+        cache.write_text("[1, 2]", encoding="utf-8")
+        transport = httpx.MockTransport(lambda r: httpx.Response(503))
+        async with httpx.AsyncClient(transport=transport) as client:
+            with pytest.raises(CatalogUnavailable):
+                await fetch_catalog(cache_path=cache, client=client, now=NOW)

@@ -47,7 +47,8 @@ async def _keyless_payload(
     """Build the host-facing payload, grounding it in the registry when reachable."""
     try:
         catalog = await fetch_catalog()
-    except CatalogUnavailable:
+    except Exception:
+        # The snapshot is optional grounding; its failure never stops the check.
         catalog = None
     return await build_verification_payload(
         proposal,

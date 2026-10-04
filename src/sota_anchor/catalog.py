@@ -263,11 +263,12 @@ def _shift_months(moment: dt.datetime, months: int) -> dt.datetime:
 def _as_datetime(value: Any) -> dt.datetime | None:
     if value in (None, "", 0):
         return None
-    if isinstance(value, (int, float)):
-        return dt.datetime.fromtimestamp(value, dt.UTC)
     try:
+        if isinstance(value, (int, float)):
+            return dt.datetime.fromtimestamp(value, dt.UTC)
         parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
+        # Out of the platform's range, or not a date at all: unknown, not fatal.
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
 
@@ -289,6 +290,17 @@ def _modalities(values: Any) -> tuple[str, ...]:
     return tuple(v for v in values if isinstance(v, str) and MODALITY_PATTERN.fullmatch(v))
 
 
+def _sort_key(raw: dict) -> float:
+    created = raw.get("created")
+    return float(created) if isinstance(created, (int, float)) else 0.0
+
+
+def _field(raw: dict, name: str, kind: type) -> Any:
+    """A field of the expected type, or None: one odd field never costs the row."""
+    value = raw.get(name)
+    return value if isinstance(value, kind) and not isinstance(value, bool) else None
+
+
 def _collapse_variants(raw_models: list[dict]) -> dict[str, tuple[dict, list[str]]]:
     """Fold ``:suffix`` rows onto their base ID, keeping the suffixes as metadata.
 
@@ -297,6 +309,8 @@ def _collapse_variants(raw_models: list[dict]) -> dict[str, tuple[dict, list[str
     """
     collapsed: dict[str, tuple[dict, list[str]]] = {}
     for raw in raw_models:
+        if not isinstance(raw, dict):
+            continue
         model_id = raw.get("id")
         if not isinstance(model_id, str) or not _is_model_id(model_id):
             continue
@@ -304,7 +318,7 @@ def _collapse_variants(raw_models: list[dict]) -> dict[str, tuple[dict, list[str
         record, variants = collapsed.get(parsed.base_id, (None, []))
         if parsed.variant:
             variants = [*variants, parsed.variant]
-        if record is None or (raw.get("created") or 0) > (record.get("created") or 0):
+        if record is None or _sort_key(raw) > _sort_key(record):
             record = raw
         collapsed[parsed.base_id] = (record, variants)
     return collapsed
@@ -335,31 +349,32 @@ def build_catalog(
         created = _as_datetime(raw.get("created")) or dt.datetime.min.replace(
             tzinfo=dt.UTC
         )
-        architecture = raw.get("architecture") or {}
-        pricing = raw.get("pricing") or {}
+        architecture = _field(raw, "architecture", dict) or {}
+        pricing = _field(raw, "pricing", dict) or {}
+        parameters = _field(raw, "supported_parameters", list) or []
         try:
             prompt_price = float(pricing.get("prompt")) if pricing.get("prompt") else None
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             prompt_price = None
 
         entries.append(
             ModelEntry(
                 id=base_id,
-                name=str(raw.get("name") or base_id),
+                name=_field(raw, "name", str) or base_id,
                 provider=parsed.provider,
                 lineage=parsed.lineage,
                 version=parsed.version,
                 created=created,
                 status="current",
                 knowledge_cutoff=_cutoff(raw.get("knowledge_cutoff")),
-                context_length=raw.get("context_length"),
+                context_length=_field(raw, "context_length", int),
                 prompt_price=prompt_price,
                 input_modalities=_modalities(architecture.get("input_modalities")),
                 output_modalities=_modalities(architecture.get("output_modalities")),
-                supports_tools="tools" in (raw.get("supported_parameters") or []),
+                supports_tools="tools" in parameters,
                 supports_structured_output=bool(
                     {"structured_outputs", "response_format"}
-                    & set(raw.get("supported_parameters") or [])
+                    & {p for p in parameters if isinstance(p, str)}
                 ),
                 is_alias=parsed.is_alias,
                 variants=tuple(sorted(set(variants))),
@@ -413,6 +428,8 @@ def _read_cache(cache_path: Path) -> tuple[list[dict], dt.datetime] | None:
     try:
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
         return None
     models = payload.get("models")
     fetched_at = _as_datetime(payload.get("fetched_at"))
@@ -478,7 +495,11 @@ async def fetch_catalog(
     try:
         response = await client.get(CATALOG_URL)
         response.raise_for_status()
-        raw_models = response.json().get("data") or []
+        payload = response.json()
+        raw_models = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(raw_models, list):
+            # Checked before the cache is written, so a bad answer is never kept.
+            raise ValueError("the registry answered with an unexpected shape")
     except (httpx.HTTPError, ValueError) as error:
         if cached:
             raw_models, fetched_at = cached
