@@ -12,6 +12,7 @@ import calendar
 import datetime as dt
 import json
 import os
+import re
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -34,6 +35,14 @@ FOCUS_PROVIDERS: tuple[str, ...] = ("anthropic", "google", "openai")
 #: leading sigil. They stay in the catalog but are never featured: an agent
 #: should commit a concrete endpoint, not a registry-specific moving target.
 ALIAS_SIGIL = "~"
+
+#: What a registry field must look like to be carried into the session block and
+#: the instruction files. Everything the registry sends reaches every session
+#: start, so a model ID holding a line break or a sentence is dropped, not quoted.
+MAX_ID_LENGTH = 128
+MODEL_ID_PATTERN = re.compile(r"~?[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:~-]*")
+CUTOFF_PATTERN = re.compile(r"[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?")
+MODALITY_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 
 Status = Literal["current", "legacy", "retired"]
 
@@ -263,12 +272,33 @@ def _as_datetime(value: Any) -> dt.datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
 
 
+def _is_model_id(value: str) -> bool:
+    return len(value) <= MAX_ID_LENGTH and MODEL_ID_PATTERN.fullmatch(value) is not None
+
+
+def _cutoff(value: Any) -> str | None:
+    """A knowledge cutoff only when it reads as a date: YYYY, YYYY-MM or YYYY-MM-DD."""
+    if isinstance(value, str) and CUTOFF_PATTERN.fullmatch(value):
+        return value
+    return None
+
+
+def _modalities(values: Any) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        return ()
+    return tuple(v for v in values if isinstance(v, str) and MODALITY_PATTERN.fullmatch(v))
+
+
 def _collapse_variants(raw_models: list[dict]) -> dict[str, tuple[dict, list[str]]]:
-    """Fold ``:suffix`` rows onto their base ID, keeping the suffixes as metadata."""
+    """Fold ``:suffix`` rows onto their base ID, keeping the suffixes as metadata.
+
+    Rows whose ID is not shaped like ``provider/model[:variant]`` are dropped here,
+    before anything else reads them.
+    """
     collapsed: dict[str, tuple[dict, list[str]]] = {}
     for raw in raw_models:
-        model_id = str(raw.get("id") or "")
-        if not model_id:
+        model_id = raw.get("id")
+        if not isinstance(model_id, str) or not _is_model_id(model_id):
             continue
         parsed = parse_model_id(model_id)
         record, variants = collapsed.get(parsed.base_id, (None, []))
@@ -321,11 +351,11 @@ def build_catalog(
                 version=parsed.version,
                 created=created,
                 status="current",
-                knowledge_cutoff=raw.get("knowledge_cutoff") or None,
+                knowledge_cutoff=_cutoff(raw.get("knowledge_cutoff")),
                 context_length=raw.get("context_length"),
                 prompt_price=prompt_price,
-                input_modalities=tuple(architecture.get("input_modalities") or ()),
-                output_modalities=tuple(architecture.get("output_modalities") or ()),
+                input_modalities=_modalities(architecture.get("input_modalities")),
+                output_modalities=_modalities(architecture.get("output_modalities")),
                 supports_tools="tools" in (raw.get("supported_parameters") or []),
                 supports_structured_output=bool(
                     {"structured_outputs", "response_format"}
