@@ -319,3 +319,23 @@ class TestLLMClient:
         client, _ = self._client("[1, 2, 3]", "[4]", "[5]")
         with pytest.raises(ArbiterError):
             await client.complete_json("prompt")
+
+
+class TestProviderFailures:
+    """A provider that cannot be reached, or refuses the key, is reported as an
+    ArbiterError: the CLI prints it as one line and the MCP tool returns it as
+    text, instead of either showing a traceback."""
+
+    async def test_an_unreachable_provider_is_an_arbiter_error(self, monkeypatch):
+        from sota_anchor.arbiter import ArbiterError, LLMClient
+
+        settings = resolve_settings(
+            {
+                "SOTA_ANCHOR_API_KEY": "sk-very-secret-value",
+                "SOTA_ANCHOR_BASE_URL": "http://127.0.0.1:9/v1",
+                "SOTA_ANCHOR_MODEL": "acme/m",
+            }
+        )
+        with pytest.raises(ArbiterError) as failed:
+            await LLMClient(settings).complete_json("prompt")
+        assert "sk-very-secret-value" not in str(failed.value)

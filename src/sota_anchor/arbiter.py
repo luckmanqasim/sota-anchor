@@ -226,7 +226,7 @@ class LLMClient:
         return self.settings.model
 
     async def _openai_completion(self, prompt: str) -> str:
-        from openai import AsyncOpenAI
+        from openai import AsyncOpenAI, OpenAIError
 
         model = await self.ensure_model()
         if self._client is None:
@@ -234,12 +234,18 @@ class LLMClient:
                 api_key=self.settings.api_key.get_secret_value(),
                 base_url=self.settings.base_url,
             )
-        response = await self._client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0,
-        )
+        try:
+            response = await self._client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0,
+            )
+        except OpenAIError as error:
+            raise ArbiterError(
+                f"the model provider at {self.settings.base_url} failed: "
+                f"{type(error).__name__}: {error}"
+            ) from error
         return response.choices[0].message.content or ""
 
     async def complete_json(self, prompt: str) -> dict[str, Any]:
