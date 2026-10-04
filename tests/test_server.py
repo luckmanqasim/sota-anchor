@@ -311,3 +311,22 @@ class TestWindowParameter:
             "check_what_exists", {"pitch": "a pitch", "domain_query": "a query"}
         )
         assert state["kwargs"]["months"] == DEFAULT_WINDOW_MONTHS
+
+    async def test_the_schema_bounds_months(self, keyless):
+        server, _ = keyless
+        tool = next(t for t in await server.list_tools() if t.name == "check_what_exists")
+        months = tool.input_schema["properties"]["months"]
+        assert months["minimum"] == 1
+        assert months["maximum"] == 120
+
+    @pytest.mark.parametrize("months", [0, -3, 121, 100000])
+    async def test_an_out_of_range_window_is_refused_before_retrieval(self, keyless, months):
+        from mcp.server.mcpserver.exceptions import ToolError
+
+        server, state = keyless
+        with pytest.raises(ToolError, match="months"):
+            await server.call_tool(
+                "check_what_exists",
+                {"pitch": "a pitch", "domain_query": "a query", "months": months},
+            )
+        assert "kwargs" not in state

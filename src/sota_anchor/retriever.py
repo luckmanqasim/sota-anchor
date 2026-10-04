@@ -61,6 +61,9 @@ WEB_API_KEY_ENV = "SOTA_ANCHOR_BRAVE_API_KEY"
 GITHUB_AUTH_ENVS = ("SOTA_ANCHOR_GITHUB_TOKEN",)
 
 DEFAULT_WINDOW_MONTHS = 12
+#: The widest window the MCP tool accepts. Past ten years the search dates stop
+#: meaning "recent", and far enough past it they stop being valid dates at all.
+MAX_WINDOW_MONTHS = 120
 DEFAULT_PER_SOURCE = 5
 ARXIV_FETCH_SIZE = 25
 HF_FETCH_SIZE = 20

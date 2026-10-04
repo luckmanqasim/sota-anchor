@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from typing import Annotated
 
 from mcp.server import MCPServer
+from pydantic import Field
 
 from . import __version__
 from .arbiter import (
@@ -28,7 +30,7 @@ from .catalog import (
     fetch_catalog,
 )
 from .protocol import build_verification_payload
-from .retriever import DEFAULT_WINDOW_MONTHS, gather_evidence
+from .retriever import DEFAULT_WINDOW_MONTHS, MAX_WINDOW_MONTHS, gather_evidence
 
 SERVER_NAME = "sota-anchor"
 
@@ -113,7 +115,7 @@ def build_server(
         pitch: str,
         domain_query: str | None = None,
         capability_query: str | None = None,
-        months: int = DEFAULT_WINDOW_MONTHS,
+        months: Annotated[int, Field(ge=1, le=MAX_WINDOW_MONTHS)] = DEFAULT_WINDOW_MONTHS,
     ) -> str:
         try:
             llm = build_llm()
