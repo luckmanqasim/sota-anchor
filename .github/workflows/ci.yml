@@ -19,7 +19,7 @@ jobs:
         # writes and the cp1252 console handling are the parts most likely to
         # break there, and they were all written against it.
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     defaults:
       run:
         # One shell on both platforms. These steps were run as written under
