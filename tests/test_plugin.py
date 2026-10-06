@@ -54,6 +54,23 @@ class TestPluginManifest:
         assert "key" in load(PLUGIN_MANIFEST)["description"].lower()
 
 
+class TestListingIcon:
+    """The directory takes the listing icon from .claude-plugin/icon.png once, on
+    the first save or submission, so it has to be right before that happens."""
+
+    ICON = REPO / ".claude-plugin" / "icon.png"
+
+    def test_is_a_square_png_within_the_directory_limits(self):
+        data = self.ICON.read_bytes()
+        assert data[:8] == bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        # IHDR comes first: width and height are big-endian at bytes 16-24.
+        width = int.from_bytes(data[16:20], "big")
+        height = int.from_bytes(data[20:24], "big")
+        assert width == height
+        assert 512 <= width <= 2048
+        assert len(data) < 2 * 1024 * 1024
+
+
 class TestHooksManifest:
     def test_lives_in_hooks_not_in_the_claude_plugin_dir(self):
         # Verified against seven installed plugins: hooks/hooks.json is the path.

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="sota-anchor icon: a white anchor on a magenta rounded tile">
+<rect width="120" height="120" rx="26" fill="#C4177A"/><g transform="translate(60 60) scale(1.4) translate(-60 -61.6)">
+<circle cx="60" cy="40.5" r="6.5" fill="none" stroke="#FFFFFF" stroke-width="4.8"/>
+<path d="M60,47 L60,89.2" stroke="#FFFFFF" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M46.2,54.2 L73.8,54.2" stroke="#FFFFFF" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M36.2,71.8 Q38.8,89.2 60,89.2 Q81.2,89.2 83.8,71.8" stroke="#FFFFFF" stroke-width="4.8" stroke-linecap="round" fill="none"/>
+<path d="M36.2,66 L31,76.5 L41.5,76.5 Z" fill="#FFFFFF"/>
+<path d="M83.8,66 L89,76.5 L78.5,76.5 Z" fill="#FFFFFF"/>
+</g>
+</svg>
