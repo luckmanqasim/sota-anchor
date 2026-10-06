@@ -1,8 +1,8 @@
 """The SessionStart context block.
 
-Rendered at sync time and cached, so the hook that injects it is a `cat` rather
-than a Python process: measured here, the pre-rendered path costs ~160 ms
-against ~650 ms warm and ~1,090 ms cold through the interpreter.
+Rendered at sync time and cached, so the hook that injects it only reads a file:
+measured here, reading the pre-rendered block costs ~160 ms, against ~650 ms
+warm and ~1,090 ms cold for rendering it at session start.
 
 The block is resident in every session the plugin touches, which sets its
 constraints. It has to be *specific* - naming the exact superseded identifiers
@@ -293,8 +293,8 @@ def write_seed(block: str, *, path: Path | None = None) -> Path:
 def is_stale(path: Path, *, now: dt.datetime | None = None, ttl_hours: int = SEED_TTL_HOURS) -> bool:
     """True when the block is missing or older than the TTL.
 
-    The hook makes the same judgement in pure bash with `find -mmin`; this is the
-    Python-side equivalent for the CLI and tests.
+    The hook makes the same judgement from the file's modification time; this is
+    the equivalent here, for the CLI and tests.
     """
     now = now or dt.datetime.now(dt.UTC)
     try:
