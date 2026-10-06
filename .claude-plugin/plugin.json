@@ -8,6 +8,9 @@
   },
   "homepage": "https://github.com/luckmanqasim/sota-anchor",
   "repository": "https://github.com/luckmanqasim/sota-anchor",
+  "documentationUrl": "https://github.com/luckmanqasim/sota-anchor#readme",
+  "supportUrl": "https://github.com/luckmanqasim/sota-anchor/issues",
+  "privacyPolicyUrl": "https://github.com/luckmanqasim/sota-anchor/blob/main/PRIVACY.md",
   "license": "MIT",
   "keywords": [
     "models",
