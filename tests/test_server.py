@@ -357,3 +357,23 @@ class TestCatalogFailureIsNotFatal:
             "check_what_exists", {"pitch": "a pitch", "domain_query": "a query"}
         )
         assert "PlanSightRAG" in text_of(result)
+
+
+class TestToolAnnotations:
+    """The directory policy requires readOnlyHint, destructiveHint and a title on
+    every tool, so a client can tell what calling it risks before it does."""
+
+    async def test_the_check_declares_what_it_does_to_the_world(self):
+        from sota_anchor.server import build_server
+
+        [tool] = [t for t in await build_server().list_tools() if t.name == "check_what_exists"]
+        assert tool.title
+        hints = tool.annotations
+        assert hints is not None
+        assert hints.title == tool.title
+        # It searches and reports; it changes nothing on the machine or anywhere else.
+        assert hints.read_only_hint is True
+        assert hints.destructive_hint is False
+        assert hints.idempotent_hint is True
+        # It queries public services outside the client.
+        assert hints.open_world_hint is True

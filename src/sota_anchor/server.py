@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Annotated
 
 from mcp.server import MCPServer
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from . import __version__
@@ -33,6 +34,18 @@ from .protocol import build_verification_payload
 from .retriever import DEFAULT_WINDOW_MONTHS, MAX_WINDOW_MONTHS, gather_evidence
 
 SERVER_NAME = "sota-anchor"
+
+CHECK_TITLE = "Check what already exists"
+
+#: What a client may assume before calling the check: it searches public services
+#: and reports, and changes nothing on the machine or anywhere else.
+CHECK_ANNOTATIONS = ToolAnnotations(
+    title=CHECK_TITLE,
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
 
 CHECK_DESCRIPTION = (
     "Check whether a plan relies on something being unavailable that may no longer "
@@ -165,7 +178,9 @@ def build_server(
     mcp.add_tool(
         check_what_exists_tool,
         name="check_what_exists",
+        title=CHECK_TITLE,
         description=CHECK_DESCRIPTION,
+        annotations=CHECK_ANNOTATIONS,
     )
 
     @mcp.prompt(
