@@ -1,6 +1,6 @@
 [project]
 name = "sota-anchor"
-version = "0.2.0"
+version = "0.2.1"
 description = "Finds libraries, tools and research released after your coding agent's training, before it rebuilds them from scratch: a search of the last year of papers, repositories and packages, as an MCP server and Claude Code plugin."
 readme = "README.md"
 requires-python = ">=3.11"

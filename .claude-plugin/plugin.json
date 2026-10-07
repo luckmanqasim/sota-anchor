@@ -1,7 +1,7 @@
 {
   "name": "sota-anchor",
   "description": "Finds the libraries, tools and research released after your coding agent's training, before it rebuilds them from scratch. When a plan assumes something is unavailable - a library, a reader for a format only the vendor's software opens, a model capability - it searches the last year of papers, repositories and packages first. Also adds a dated list of current model API IDs to each session. Needs no LLM API key: this session does the reasoning, the plugin does the retrieval.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Luckman Qasim",
     "url": "https://github.com/luckmanqasim/sota-anchor"
