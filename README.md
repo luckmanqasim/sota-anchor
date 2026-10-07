@@ -150,6 +150,38 @@ What you get:
 | **`/sota-sync`** | Refreshes the model list now and writes it into `CLAUDE.md`, `AGENTS.md` and Cursor's rules. |
 | **Prompt hook** *(opt-in)* | With `SOTA_ANCHOR_PROMPT_HOOK=1`, adds a nudge when a message says something can't be done. |
 
+### Try it
+
+Three prompts that show what it does:
+
+1. **A plan that rests on something missing.** The check runs by itself:
+
+   ```text
+   xcode 27 moved our project to the new project.xcproj format and there's no library for
+   it yet, so write a swift parser we can use in CI to check each target's build settings
+   ```
+
+   Claude finds Apple's own `xcode-project-format` library, released after the model's
+   training, and asks what the CI check should enforce instead of writing a parser.
+
+2. **A check on demand,** for a format usually assumed to need the vendor's SDK:
+
+   ```text
+   /sota-check "Write our own reader for Navisworks .nwd files, since we can't use the Autodesk SDK"
+   ```
+
+   It searches recent repositories, packages and papers, and reports what it found, with
+   dates, or says plainly that nothing turned up.
+
+3. **A model identifier in code.** The session's model list does the work:
+
+   ```text
+   Add an Anthropic client to this script and pick the current flagship model
+   ```
+
+   Claude uses an endpoint from the dated list the plugin adds to the session, rather than
+   an older one remembered from training.
+
 ## Other coding agents
 
 The check is a plain MCP server, so it works in any agent that speaks MCP. The model list
@@ -445,6 +477,20 @@ or to `SOTA_ANCHOR_CACHE_DIR`. `/sota-sync` and `sota-anchor sync` write a marke
 into `CLAUDE.md`, `AGENTS.md` or Cursor's rules in the current project, and only when you
 run them. The opt-in prompt hook reads your prompt on your machine to decide whether to
 add a nudge, and sends it nowhere.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| The `check` server doesn't connect in Claude Code | Make sure `uv` is installed and on `PATH`, then start a new session. The first start builds the server's environment and takes a few seconds longer. `/mcp` shows the server's status. |
+| Another agent can't find `sota-anchor` | Give it the full path. `uv tool dir --bin` prints the folder uv installed it into. |
+| OpenCode reports the server failed when using `uvx` | Raise its `timeout` to `30000`. OpenCode waits 5 seconds by default, and a first `uvx` launch spends longer downloading packages. |
+| A check says nothing was found | Read the errors it lists: a source may have been throttled or timed out. Set a GitHub token to raise GitHub's limit, try again with a larger `months`, or reword the queries with the most specific term first. |
+| The model list is missing or old | Run `/sota-sync`, or `sota-anchor sync` outside Claude Code. |
+| `check` says `SOTA_ANCHOR_BASE_URL must start with https://` | Use the provider's `https://` URL. Plain `http://` is accepted only for a server on your own machine. |
+
+Anything else: open an [issue](https://github.com/luckmanqasim/sota-anchor/issues). For a
+security problem, follow [SECURITY.md](https://github.com/luckmanqasim/sota-anchor/blob/main/SECURITY.md) instead.
 
 ## Limitations
 
